@@ -1,0 +1,16 @@
+case_id,activity,timestamp,resource
+1001,Receive Order,2023-05-01 08:00:00,alice
+1001,Check Stock,2023-05-01 09:15:00,bob
+1001,Ship Order,2023-05-01 14:30:00,carol
+1001,Send Invoice,2023-05-02 10:00:00,dave
+1002,Receive Order,2023-05-01 08:45:00,alice
+1002,Check Stock,2023-05-01 11:20:00,bob
+1002,Cancel Order,2023-05-01 13:00:00,erin
+1003,Receive Order,2023-05-02 09:00:00,alice
+1003,Check Stock,2023-05-02 09:40:00,bob
+1003,Ship Order,2023-05-02 16:10:00,carol
+1003,Send Invoice,2023-05-03 09:30:00,dave
+1004,Receive Order,2023-05-03 07:50:00,alice
+1004,Check Stock,2023-05-03 08:30:00,bob
+1004,Ship Order,2023-05-03 18:00:00,carol
+1004,Send Invoice,2023-05-04 11:00:00,dave
