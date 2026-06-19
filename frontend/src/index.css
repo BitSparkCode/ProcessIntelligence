@@ -105,3 +105,202 @@ input[type="text"] {
   color: #7b8794;
   font-size: 0.85rem;
 }
+
+/* ── Header / session ─────────────────────────────────────────── */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+.session {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.row-actions {
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+button.link {
+  background: none;
+  color: #2563eb;
+  padding: 0;
+  font-size: 0.85rem;
+  text-decoration: underline;
+}
+
+/* ── Auth ─────────────────────────────────────────────────────── */
+.auth-card {
+  max-width: 360px;
+  margin: 40px auto;
+}
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.auth-form input {
+  padding: 8px;
+  border: 1px solid #cbd2d9;
+  border-radius: 6px;
+}
+.auth-form button {
+  margin-top: 10px;
+}
+
+/* ── AI suggestion banner ─────────────────────────────────────── */
+.suggestion-banner {
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+}
+.suggestion-banner--ai {
+  border-color: #c4b5fd;
+  background: #f5f3ff;
+}
+
+/* ── Process graph (n8n-style canvas) ─────────────────────────── */
+.graph-view {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.graph-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 1px solid #e4e7eb;
+  flex-wrap: wrap;
+}
+.graph-controls {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.graph-controls label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.72rem;
+  color: #52606d;
+  gap: 2px;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid #cbd2d9;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.seg button {
+  background: #fff;
+  color: #1f2933;
+  border-radius: 0;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+.seg button.active {
+  background: #2563eb;
+  color: #fff;
+}
+.graph-loading {
+  padding: 6px 16px;
+}
+.graph-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Custom activity node */
+.activity-node {
+  width: 200px;
+  background: #fff;
+  border: 2px solid #93c5fd;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+  display: flex;
+  overflow: hidden;
+  font-size: 0.8rem;
+}
+.activity-node.selected {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.4);
+}
+.activity-node__bar {
+  width: 6px;
+}
+.activity-node__body {
+  padding: 8px 10px;
+  flex: 1;
+  min-width: 0;
+}
+.activity-node__title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.activity-node__kpis {
+  display: flex;
+  justify-content: space-between;
+  color: #52606d;
+  font-size: 0.72rem;
+  margin-top: 4px;
+}
+.activity-node__tags {
+  margin-top: 6px;
+  display: flex;
+  gap: 4px;
+}
+.tag {
+  font-size: 0.62rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tag--start {
+  background: #dcfce7;
+  color: #166534;
+}
+.tag--end {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Node detail panel */
+.node-detail {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 240px;
+  background: #fff;
+  border: 1px solid #e4e7eb;
+  border-radius: 8px;
+  padding: 14px 16px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+  z-index: 5;
+}
+.node-detail h3 {
+  margin: 0 0 8px;
+}
+.node-detail dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  margin: 0 0 12px;
+  font-size: 0.8rem;
+}
+.node-detail dt {
+  color: #7b8794;
+}
+.node-detail dd {
+  margin: 0;
+  font-weight: 600;
+}

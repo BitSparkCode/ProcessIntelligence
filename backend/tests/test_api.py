@@ -23,23 +23,35 @@ def test_health(client):
     assert resp.json()["status"] == "ok"
 
 
-def test_upload_returns_preview(client):
-    resp = _upload(client)
+def test_upload_returns_preview(auth_client):
+    resp = _upload(auth_client)
     assert resp.status_code == 200
     body = resp.json()
     assert body["preview"]["columns"] == ["case", "activity", "time", "who"]
     assert "upload_id" in body
+    # Heuristic data linking should map the obvious columns (Story 6.1).
+    mapping = body["suggestion"]["mapping"]
+    assert mapping["case_id"] == "case"
+    assert mapping["activity"] == "activity"
+    assert mapping["timestamp"] == "time"
+    assert body["suggestion"]["ai_enabled"] is False
 
 
-def test_upload_rejects_non_csv(client):
-    resp = client.post(
+def test_endpoints_require_auth(client):
+    assert _upload(client).status_code in (401, 403)
+    assert client.get("/api/logs").status_code in (401, 403)
+
+
+def test_upload_rejects_non_csv(auth_client):
+    resp = auth_client.post(
         "/api/logs/upload",
         files={"file": ("data.txt", io.BytesIO(b"x"), "text/plain")},
     )
     assert resp.status_code == 400
 
 
-def test_full_import_flow(client):
+def test_full_import_flow(auth_client):
+    client = auth_client
     upload_id = _upload(client).json()["upload_id"]
     resp = client.post(
         "/api/logs/import",
@@ -69,7 +81,8 @@ def test_full_import_flow(client):
     assert client.get("/api/logs").json() == []
 
 
-def test_import_rejects_bad_mapping(client):
+def test_import_rejects_bad_mapping(auth_client):
+    client = auth_client
     upload_id = _upload(client).json()["upload_id"]
     resp = client.post(
         "/api/logs/import",

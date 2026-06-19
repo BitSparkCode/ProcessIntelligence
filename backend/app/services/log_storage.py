@@ -26,11 +26,19 @@ def _uuid() -> str:
 def persist_log(
     db: Session,
     *,
+    workspace_id: str,
     name: str,
     source: str,
     events: Iterable[NormalizedEvent],
 ) -> ImportResult:
-    log = EventLog(id=_uuid(), name=name, source=source, row_count=0, case_count=0)
+    log = EventLog(
+        id=_uuid(),
+        workspace_id=workspace_id,
+        name=name,
+        source=source,
+        row_count=0,
+        case_count=0,
+    )
     db.add(log)
     db.flush()
 
@@ -115,9 +123,9 @@ def persist_log(
     )
 
 
-def delete_log(db: Session, log_id: str) -> bool:
+def delete_log(db: Session, log_id: str, workspace_id: str) -> bool:
     log = db.get(EventLog, log_id)
-    if log is None:
+    if log is None or log.workspace_id != workspace_id:
         return False
     db.delete(log)
     db.commit()

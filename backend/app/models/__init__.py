@@ -1,3 +1,4 @@
+from app.models.auth import User, Workspace
 from app.models.event_log import (
     Activity,
     Attribute,
@@ -14,4 +15,6 @@ __all__ = [
     "Event",
     "EventLog",
     "Resource",
+    "User",
+    "Workspace",
 ]

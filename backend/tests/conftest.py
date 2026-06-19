@@ -38,3 +38,21 @@ def client(db_session: Session, tmp_path, monkeypatch) -> Generator[TestClient, 
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+def register(client: TestClient, email: str, password: str = "password123") -> str:
+    """Register a user and return its bearer token."""
+    resp = client.post(
+        "/api/auth/register",
+        json={"email": email, "password": password},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["access_token"]
+
+
+@pytest.fixture()
+def auth_client(client: TestClient) -> TestClient:
+    """A TestClient with a registered user's bearer token preset."""
+    token = register(client, "owner@example.com")
+    client.headers.update({"Authorization": f"Bearer {token}"})
+    return client
