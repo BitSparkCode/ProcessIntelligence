@@ -3,9 +3,10 @@ import { EventLog, deleteLog } from "../api";
 interface Props {
   logs: EventLog[];
   onChanged: () => void;
+  onDiscover: (log: EventLog) => void;
 }
 
-export default function LogList({ logs, onChanged }: Props) {
+export default function LogList({ logs, onChanged, onDiscover }: Props) {
   async function handleDelete(id: string) {
     if (!confirm("Delete this log and all derived data?")) return;
     await deleteLog(id);
@@ -36,7 +37,8 @@ export default function LogList({ logs, onChanged }: Props) {
             <td>{log.row_count.toLocaleString()}</td>
             <td>{log.case_count.toLocaleString()}</td>
             <td>{new Date(log.imported_at).toLocaleString()}</td>
-            <td>
+            <td className="row-actions">
+              <button onClick={() => onDiscover(log)}>Discover</button>
               <button className="secondary" onClick={() => handleDelete(log.id)}>
                 Delete
               </button>

@@ -28,6 +28,9 @@ class EventLog(Base):
     __tablename__ = "event_logs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     source: Mapped[str] = mapped_column(String(64), nullable=False, default="csv")
     imported_at: Mapped[datetime] = mapped_column(

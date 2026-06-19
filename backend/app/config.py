@@ -13,6 +13,19 @@ class Settings(BaseSettings):
     uploads_dir: str = "./data/uploads"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
+    # Auth
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expires_minutes: int = 60 * 24
+
+    # AI / LLM (Epic 6). When no api key/provider is set, AI features fall back
+    # to deterministic behavior and report themselves as disabled.
+    ai_provider: str = "none"  # none | openai | anthropic
+    ai_model: str = "gpt-4o-mini"
+    ai_request_timeout: float = 30.0
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

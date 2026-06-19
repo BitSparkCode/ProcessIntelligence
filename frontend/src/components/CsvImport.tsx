@@ -3,6 +3,7 @@ import {
   ColumnMapping,
   CsvPreview,
   importCsv,
+  MappingSuggestion,
   uploadCsv,
 } from "../api";
 
@@ -28,6 +29,7 @@ export default function CsvImport({ onImported }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<MappingSuggestion | null>(null);
 
   async function handleFile(file: File) {
     setError(null);
@@ -38,11 +40,16 @@ export default function CsvImport({ onImported }: Props) {
       setUploadId(resp.upload_id);
       setPreview(resp.preview);
       setName(file.name.replace(/\.csv$/i, ""));
-      const cols = resp.preview.columns;
+      setSuggestion(resp.suggestion);
+      // Prefill from the server's AI/heuristic data-linking suggestion (Story 6.1).
+      const m = resp.suggestion.mapping;
       setMapping({
-        case_id: guess(cols, ["case", "case_id", "caseid"]),
-        activity: guess(cols, ["activity", "action", "task", "event"]),
-        timestamp: guess(cols, ["timestamp", "time", "date", "when"]),
+        case_id: m.case_id ?? "",
+        activity: m.activity ?? "",
+        timestamp: m.timestamp ?? "",
+        resource: m.resource ?? null,
+        cost: m.cost ?? null,
+        lifecycle: m.lifecycle ?? null,
       });
     } catch (e) {
       setError((e as Error).message);
@@ -64,6 +71,7 @@ export default function CsvImport({ onImported }: Props) {
       );
       setUploadId(null);
       setPreview(null);
+      setSuggestion(null);
       onImported();
     } catch (e) {
       setError((e as Error).message);
@@ -89,6 +97,17 @@ export default function CsvImport({ onImported }: Props) {
       {preview && (
         <>
           <h3>Map columns</h3>
+          {suggestion && (
+            <div className={`suggestion-banner suggestion-banner--${suggestion.source}`}>
+              <strong>
+                {suggestion.ai_enabled ? "AI suggested" : "Auto-detected"} a mapping
+              </strong>{" "}
+              <span className="muted">
+                ({suggestion.source}, confidence {Math.round(suggestion.confidence * 100)}%)
+              </span>
+              <div className="muted">{suggestion.reasoning}</div>
+            </div>
+          )}
           <div className="mapping-grid">
             <label>Log name</label>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} />
@@ -179,15 +198,3 @@ function MappingSelect(props: {
   );
 }
 
-function guess(columns: string[], candidates: string[]): string {
-  const lower = columns.map((c) => c.toLowerCase());
-  for (const cand of candidates) {
-    const idx = lower.indexOf(cand);
-    if (idx >= 0) return columns[idx];
-  }
-  for (const cand of candidates) {
-    const idx = lower.findIndex((c) => c.includes(cand));
-    if (idx >= 0) return columns[idx];
-  }
-  return "";
-}

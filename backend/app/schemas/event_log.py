@@ -47,3 +47,25 @@ class EventLogOut(BaseModel):
     imported_at: datetime
     row_count: int
     case_count: int
+
+
+class SuggestedColumnMapping(BaseModel):
+    """Like ColumnMapping but every field is optional (a suggestion may be partial)."""
+
+    case_id: str | None = None
+    activity: str | None = None
+    timestamp: str | None = None
+    resource: str | None = None
+    cost: str | None = None
+    lifecycle: str | None = None
+    timestamp_format: str | None = None
+
+
+class MappingSuggestion(BaseModel):
+    """AI/heuristic-proposed column mapping for the import UI (Story 6.1)."""
+
+    mapping: SuggestedColumnMapping
+    confidence: float = Field(0.0, ge=0.0, le=1.0)
+    reasoning: str = ""
+    source: str = "heuristic"  # heuristic | ai
+    ai_enabled: bool = False

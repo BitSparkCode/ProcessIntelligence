@@ -8,16 +8,18 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.config import get_settings
 from app.database import get_db
-from app.models import EventLog
+from app.models import EventLog, User
 from app.schemas.event_log import (
     ColumnMapping,
     CsvPreview,
     EventLogOut,
     ImportResult,
+    MappingSuggestion,
 )
-from app.services import csv_import, log_storage
+from app.services import ai, csv_import, log_storage
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
 settings = get_settings()
@@ -39,9 +41,19 @@ def _upload_path(upload_id: str) -> str:
     return os.path.join(_uploads_dir(), f"{upload_id}.csv")
 
 
+def _get_owned_log(db: Session, log_id: str, user: User) -> EventLog:
+    log = db.get(EventLog, log_id)
+    if log is None or log.workspace_id != user.workspace_id:
+        # Same 404 whether the log doesn't exist or belongs to another workspace,
+        # so IDs can't be probed across tenants.
+        raise HTTPException(status_code=404, detail="Log not found")
+    return log
+
+
 class UploadResponse(BaseModel):
     upload_id: str
     preview: CsvPreview
+    suggestion: MappingSuggestion
 
 
 class ImportRequest(BaseModel):
@@ -51,7 +63,10 @@ class ImportRequest(BaseModel):
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_csv(file: UploadFile = File(...)) -> UploadResponse:
+async def upload_csv(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+) -> UploadResponse:
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only .csv files are supported")
 
@@ -71,11 +86,19 @@ async def upload_csv(file: UploadFile = File(...)) -> UploadResponse:
     if not preview.columns:
         os.remove(dest)
         raise HTTPException(status_code=400, detail="CSV has no header row")
-    return UploadResponse(upload_id=upload_id, preview=preview)
+
+    # AI-assisted data linking (Story 6.1): propose a mapping. Falls back to
+    # deterministic heuristics when AI is disabled.
+    suggestion = ai.suggest_column_mapping(preview.columns, preview.rows)
+    return UploadResponse(upload_id=upload_id, preview=preview, suggestion=suggestion)
 
 
 @router.post("/import", response_model=ImportResult)
-def import_csv(req: ImportRequest, db: Session = Depends(get_db)) -> ImportResult:
+def import_csv(
+    req: ImportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ImportResult:
     path = _upload_path(req.upload_id)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Upload not found or expired")
@@ -103,7 +126,11 @@ def import_csv(req: ImportRequest, db: Session = Depends(get_db)) -> ImportResul
         )
 
     result = log_storage.persist_log(
-        db, name=req.name, source="csv", events=report.events
+        db,
+        workspace_id=current_user.workspace_id,
+        name=req.name,
+        source="csv",
+        events=report.events,
     )
     try:
         os.remove(path)
@@ -113,19 +140,32 @@ def import_csv(req: ImportRequest, db: Session = Depends(get_db)) -> ImportResul
 
 
 @router.get("", response_model=list[EventLogOut])
-def list_logs(db: Session = Depends(get_db)) -> list[EventLog]:
-    return list(db.scalars(select(EventLog).order_by(EventLog.imported_at.desc())))
+def list_logs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[EventLog]:
+    stmt = (
+        select(EventLog)
+        .where(EventLog.workspace_id == current_user.workspace_id)
+        .order_by(EventLog.imported_at.desc())
+    )
+    return list(db.scalars(stmt))
 
 
 @router.get("/{log_id}", response_model=EventLogOut)
-def get_log(log_id: str, db: Session = Depends(get_db)) -> EventLog:
-    log = db.get(EventLog, log_id)
-    if log is None:
-        raise HTTPException(status_code=404, detail="Log not found")
-    return log
+def get_log(
+    log_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EventLog:
+    return _get_owned_log(db, log_id, current_user)
 
 
 @router.delete("/{log_id}", status_code=204)
-def delete_log(log_id: str, db: Session = Depends(get_db)) -> None:
-    if not log_storage.delete_log(db, log_id):
+def delete_log(
+    log_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    if not log_storage.delete_log(db, log_id, current_user.workspace_id):
         raise HTTPException(status_code=404, detail="Log not found")
