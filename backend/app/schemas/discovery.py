@@ -39,6 +39,9 @@ class ProcessGraph(BaseModel):
     """A discovered process model rendered as a directed graph (DFG)."""
 
     log_id: str
+    algorithm: str = Field(
+        "heuristic", description="Discovery algorithm: heuristic | inductive"
+    )
     nodes: list[ActivityNode]
     edges: list[ProcessEdge]
     case_count: int
