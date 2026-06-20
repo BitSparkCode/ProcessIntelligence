@@ -48,6 +48,14 @@ PostgreSQL `5432`.
 | 2.1 | Heuristic Miner discovery via a directly-follows graph with dependency measure, frequencies, durations and configurable thresholds |
 | 2.3 | n8n-style interactive process graph (React Flow): pannable/zoomable canvas, rich activity cards with inline KPIs, frequency/time-weighted edges, minimap, node detail panel |
 
+### Sprint 3 — inductive miner, variants & performance
+
+| Story | Description |
+| ----- | ----------- |
+| 2.2 | Inductive Miner discovery (sound model) via PM4Py, with BPMN 2.0 XML export (`GET /api/discovery/{id}/bpmn`) and a Heuristic/Inductive toggle in the graph UI |
+| 2.4 | Variant analysis: distinct case paths ranked by frequency with volume share (%) and average throughput; Top-N / min-frequency filters; click a variant to highlight its path on the graph |
+| 3.1 | Throughput dashboard: avg/median/min/max case duration KPIs, per-activity and transition waiting times, a throughput-time histogram, and a time-window filter (30/90/365 days) |
+
 ### AI configuration
 
 The product is AI-first but **runs fully offline by default**. With

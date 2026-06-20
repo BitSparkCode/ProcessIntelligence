@@ -17,14 +17,29 @@ import "@xyflow/react/dist/style.css";
 import {
   type DiscoveryParams,
   discoverHeuristicMiner,
+  discoverInductiveMiner,
+  downloadBpmn,
   type ProcessGraph as ProcessGraphData,
+  type Variant,
 } from "../api";
 import ActivityNodeCard, { type ActivityCardData } from "./ActivityNodeCard";
+import VariantsPanel from "./VariantsPanel";
+import PerformancePanel from "./PerformancePanel";
 import { formatDuration } from "../format";
 
 const nodeTypes = { activity: ActivityNodeCard };
 
 type EdgeColorMode = "frequency" | "time";
+type Algorithm = "heuristic" | "inductive";
+type SidePanel = "variants" | "performance" | null;
+
+function pathEdgeIds(sequence: string[]): Set<string> {
+  const ids = new Set<string>();
+  for (let i = 0; i + 1 < sequence.length; i++) {
+    ids.add(`${sequence[i]}->${sequence[i + 1]}`);
+  }
+  return ids;
+}
 
 const NODE_W = 200;
 const NODE_H = 96;
@@ -71,20 +86,28 @@ function edgeColor(value: number, max: number, mode: EdgeColorMode): string {
   return `hsl(${(1 - t) * 130}, 75%, 45%)`;
 }
 
-function buildEdges(graph: ProcessGraphData, mode: EdgeColorMode): Edge[] {
+function buildEdges(
+  graph: ProcessGraphData,
+  mode: EdgeColorMode,
+  highlight: Set<string> | null,
+): Edge[] {
   const maxFreq = Math.max(1, ...graph.edges.map((e) => e.frequency));
   const maxTime = Math.max(1, ...graph.edges.map((e) => e.avg_duration_seconds));
   return graph.edges.map((e) => {
+    const id = `${e.source}->${e.target}`;
+    const onPath = highlight?.has(id) ?? false;
+    const dimmed = highlight != null && !onPath;
     const value = mode === "frequency" ? e.frequency : e.avg_duration_seconds;
     const max = mode === "frequency" ? maxFreq : maxTime;
-    const color = edgeColor(value, max, mode);
-    const width = 1 + (mode === "frequency" ? e.frequency / maxFreq : 0.5) * 5;
+    const color = onPath ? "#f97316" : edgeColor(value, max, mode);
+    const baseWidth = 1 + (mode === "frequency" ? e.frequency / maxFreq : 0.5) * 5;
+    const width = onPath ? Math.max(baseWidth, 3.5) : baseWidth;
     return {
-      id: `${e.source}->${e.target}`,
+      id,
       source: e.source,
       target: e.target,
       type: "smoothstep",
-      animated: e.frequency / maxFreq > 0.5,
+      animated: onPath || e.frequency / maxFreq > 0.5,
       label:
         mode === "frequency"
           ? e.frequency.toLocaleString()
@@ -92,7 +115,11 @@ function buildEdges(graph: ProcessGraphData, mode: EdgeColorMode): Edge[] {
       labelBgPadding: [4, 2] as [number, number],
       labelStyle: { fontSize: 10, fill: "#334155" },
       labelBgStyle: { fill: "#f8fafc", fillOpacity: 0.9 },
-      style: { stroke: color, strokeWidth: width },
+      style: {
+        stroke: color,
+        strokeWidth: width,
+        opacity: dimmed ? 0.18 : 1,
+      },
       markerEnd: { type: MarkerType.ArrowClosed, color },
     };
   });
@@ -109,11 +136,15 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
     dependency_threshold: 0.5,
     frequency_threshold: 1,
   });
+  const [algorithm, setAlgorithm] = useState<Algorithm>("heuristic");
   const [colorMode, setColorMode] = useState<EdgeColorMode>("frequency");
   const [graph, setGraph] = useState<ProcessGraphData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<ActivityCardData | null>(null);
+  const [sidePanel, setSidePanel] = useState<SidePanel>(null);
+  const [variant, setVariant] = useState<Variant | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -122,14 +153,17 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const data = await discoverHeuristicMiner(logId, params);
+      const data =
+        algorithm === "inductive"
+          ? await discoverInductiveMiner(logId)
+          : await discoverHeuristicMiner(logId, params);
       setGraph(data);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [logId, params]);
+  }, [logId, params, algorithm]);
 
   useEffect(() => {
     runDiscovery();
@@ -137,17 +171,38 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
 
   const laidOut = useMemo(() => (graph ? layout(graph) : null), [graph]);
 
+  const highlight = useMemo(
+    () => (variant ? pathEdgeIds(variant.sequence) : null),
+    [variant],
+  );
+
   useEffect(() => {
     if (laidOut) setNodes(laidOut.nodes);
   }, [laidOut, setNodes]);
 
   useEffect(() => {
-    if (graph) setEdges(buildEdges(graph, colorMode));
-  }, [graph, colorMode, setEdges]);
+    if (graph) setEdges(buildEdges(graph, colorMode, highlight));
+  }, [graph, colorMode, highlight, setEdges]);
 
   const onNodeClick = useCallback((_: unknown, node: Node) => {
     setSelected(node.data as ActivityCardData);
   }, []);
+
+  async function exportBpmn() {
+    setExporting(true);
+    setError(null);
+    try {
+      await downloadBpmn(logId, logName);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function togglePanel(panel: Exclude<SidePanel, null>) {
+    setSidePanel((p) => (p === panel ? null : panel));
+  }
 
   return (
     <div className="graph-view">
@@ -161,32 +216,56 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
           </span>
         </div>
         <div className="graph-controls">
-          <label>
-            Dependency ≥ {params.dependency_threshold.toFixed(2)}
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={params.dependency_threshold}
-              onChange={(e) =>
-                setParams((p) => ({ ...p, dependency_threshold: Number(e.target.value) }))
-              }
-            />
-          </label>
-          <label>
-            Min frequency {params.frequency_threshold}
-            <input
-              type="range"
-              min={1}
-              max={20}
-              step={1}
-              value={params.frequency_threshold}
-              onChange={(e) =>
-                setParams((p) => ({ ...p, frequency_threshold: Number(e.target.value) }))
-              }
-            />
-          </label>
+          <div className="seg" title="Discovery algorithm">
+            <button
+              className={algorithm === "heuristic" ? "active" : ""}
+              onClick={() => setAlgorithm("heuristic")}
+            >
+              Heuristic
+            </button>
+            <button
+              className={algorithm === "inductive" ? "active" : ""}
+              onClick={() => setAlgorithm("inductive")}
+            >
+              Inductive
+            </button>
+          </div>
+          {algorithm === "heuristic" && (
+            <>
+              <label>
+                Dependency ≥ {params.dependency_threshold.toFixed(2)}
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={params.dependency_threshold}
+                  onChange={(e) =>
+                    setParams((p) => ({
+                      ...p,
+                      dependency_threshold: Number(e.target.value),
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Min frequency {params.frequency_threshold}
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  step={1}
+                  value={params.frequency_threshold}
+                  onChange={(e) =>
+                    setParams((p) => ({
+                      ...p,
+                      frequency_threshold: Number(e.target.value),
+                    }))
+                  }
+                />
+              </label>
+            </>
+          )}
           <div className="seg">
             <button
               className={colorMode === "frequency" ? "active" : ""}
@@ -201,6 +280,21 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
               Time
             </button>
           </div>
+          <button
+            className={sidePanel === "variants" ? "" : "secondary"}
+            onClick={() => togglePanel("variants")}
+          >
+            Variants
+          </button>
+          <button
+            className={sidePanel === "performance" ? "" : "secondary"}
+            onClick={() => togglePanel("performance")}
+          >
+            Performance
+          </button>
+          <button className="secondary" onClick={exportBpmn} disabled={exporting}>
+            {exporting ? "Exporting…" : "Export BPMN"}
+          </button>
           <button className="secondary" onClick={onClose}>
             Close
           </button>
@@ -210,25 +304,35 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
       {error && <div className="error">{error}</div>}
       {busy && <div className="muted graph-loading">Discovering process…</div>}
 
-      <div className="graph-canvas">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onNodeClick={onNodeClick}
-          onPaneClick={() => setSelected(null)}
-          fitView
-          minZoom={0.1}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
-          <Controls />
-          <MiniMap pannable zoomable />
-        </ReactFlow>
+      <div className="graph-body">
+        <div className="graph-canvas">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onNodeClick={onNodeClick}
+            onPaneClick={() => setSelected(null)}
+            fitView
+            minZoom={0.1}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
+            <Controls />
+            <MiniMap pannable zoomable />
+          </ReactFlow>
 
-        {selected && (
+          {variant && (
+            <div className="path-banner">
+              Highlighting variant #{variant.rank} ({variant.percentage.toFixed(1)}%)
+              <button className="link" onClick={() => setVariant(null)}>
+                clear
+              </button>
+            </div>
+          )}
+
+          {selected && (
           <div className="node-detail">
             <h3>{selected.label}</h3>
             <dl>
@@ -251,6 +355,16 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
             </button>
           </div>
         )}
+        </div>
+
+        {sidePanel === "variants" && (
+          <VariantsPanel
+            logId={logId}
+            selectedRank={variant?.rank ?? null}
+            onSelect={setVariant}
+          />
+        )}
+        {sidePanel === "performance" && <PerformancePanel logId={logId} />}
       </div>
     </div>
   );

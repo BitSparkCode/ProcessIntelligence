@@ -74,6 +74,7 @@ export interface ProcessEdge {
 
 export interface ProcessGraph {
   log_id: string;
+  algorithm: string;
   nodes: ActivityNode[];
   edges: ProcessEdge[];
   case_count: number;
@@ -87,6 +88,64 @@ export interface ProcessGraph {
 export interface DiscoveryParams {
   dependency_threshold: number;
   frequency_threshold: number;
+}
+
+export interface Variant {
+  rank: number;
+  sequence: string[];
+  case_count: number;
+  percentage: number;
+  avg_throughput_seconds: number;
+}
+
+export interface VariantReport {
+  log_id: string;
+  case_count: number;
+  variant_count: number;
+  variants: Variant[];
+}
+
+export interface VariantParams {
+  top_n?: number | null;
+  min_frequency?: number;
+}
+
+export interface ActivityStat {
+  activity: string;
+  frequency: number;
+  avg_duration_to_next_seconds: number | null;
+}
+
+export interface TransitionStat {
+  source: string;
+  target: string;
+  frequency: number;
+  avg_waiting_seconds: number;
+}
+
+export interface HistogramBin {
+  lower_seconds: number;
+  upper_seconds: number;
+  count: number;
+}
+
+export interface PerformanceReport {
+  log_id: string;
+  case_count: number;
+  event_count: number;
+  avg_throughput_seconds: number;
+  median_throughput_seconds: number;
+  min_throughput_seconds: number;
+  max_throughput_seconds: number;
+  activity_stats: ActivityStat[];
+  transition_stats: TransitionStat[];
+  histogram: HistogramBin[];
+  window_days: number | null;
+}
+
+export interface PerformanceParams {
+  window_days?: number | null;
+  histogram_bins?: number;
 }
 
 export interface CurrentUser {
@@ -202,6 +261,62 @@ export async function discoverHeuristicMiner(
 ): Promise<ProcessGraph> {
   return handle<ProcessGraph>(
     await fetch(`/api/discovery/${logId}/heuristic-miner`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(params),
+    }),
+  );
+}
+
+export async function discoverInductiveMiner(
+  logId: string,
+): Promise<ProcessGraph> {
+  return handle<ProcessGraph>(
+    await fetch(`/api/discovery/${logId}/inductive-miner`, {
+      method: "POST",
+      headers: authHeaders(),
+    }),
+  );
+}
+
+export async function downloadBpmn(logId: string, logName: string): Promise<void> {
+  const resp = await fetch(`/api/discovery/${logId}/bpmn`, {
+    headers: authHeaders(),
+  });
+  if (!resp.ok) {
+    if (resp.status === 401) clearToken();
+    throw new Error(`BPMN export failed (${resp.status})`);
+  }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${logName || "process"}.bpmn`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function analyzeVariants(
+  logId: string,
+  params: VariantParams,
+): Promise<VariantReport> {
+  return handle<VariantReport>(
+    await fetch(`/api/analysis/${logId}/variants`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(params),
+    }),
+  );
+}
+
+export async function analyzePerformance(
+  logId: string,
+  params: PerformanceParams,
+): Promise<PerformanceReport> {
+  return handle<PerformanceReport>(
+    await fetch(`/api/analysis/${logId}/performance`, {
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(params),
