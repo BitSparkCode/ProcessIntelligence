@@ -82,3 +82,49 @@ class PerformanceReport(BaseModel):
     transition_stats: list[TransitionStat]
     histogram: list[HistogramBin]
     window_days: int | None = None
+
+
+# ── Bottleneck detection (Story 3.2) ──────────────────────────────────────────
+
+
+class BottleneckRequest(BaseModel):
+    percentile: float = Field(
+        90.0,
+        ge=50.0,
+        le=100.0,
+        description="Flag steps whose mean waiting time exceeds this percentile "
+        "of all individual waiting times",
+    )
+    window_days: int | None = Field(
+        None, ge=1, description="Only consider cases within this many days of the latest event"
+    )
+    top_n: int = Field(5, ge=1, le=50, description="Size of the Top-N summary")
+
+
+class Bottleneck(BaseModel):
+    kind: str = Field(..., description="'transition' or 'activity'")
+    label: str = Field(..., description="Human-readable, e.g. 'A → B' or 'A'")
+    source: str
+    target: str | None = None
+    avg_waiting_seconds: float
+    max_waiting_seconds: float
+    frequency: int
+    severity: float = Field(
+        ..., description="avg waiting time as a multiple of the threshold (>= 1)"
+    )
+
+
+class BottleneckReport(BaseModel):
+    log_id: str
+    percentile: float
+    threshold_seconds: float = Field(
+        ..., description="The percentile cut-off over all waiting times"
+    )
+    case_count: int
+    bottleneck_count: int
+    bottlenecks: list[Bottleneck] = Field(
+        ..., description="All flagged transitions/activities, slowest first"
+    )
+    top: list[Bottleneck] = Field(..., description="Top-N slowest, for the summary")
+    summary: list[str] = Field(..., description="Plain-text Top-N lines, exportable")
+    window_days: int | None = None

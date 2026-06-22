@@ -121,6 +121,33 @@ def parse_cost(value: str | None) -> float | None:
         return None
 
 
+def event_from_record(
+    record: dict[str, object], mapping: ColumnMapping
+) -> NormalizedEvent | None:
+    """Map a single source record (any dict) to a NormalizedEvent.
+
+    Returns ``None`` when the record lacks a case id / activity or has an
+    unparseable timestamp. Shared by the CSV importer and the connector
+    framework (Story 1.4) so every source funnels through the same mapping.
+    """
+    row = {k: ("" if v is None else str(v)) for k, v in record.items()}
+    case_key = (row.get(mapping.case_id) or "").strip()
+    activity = (row.get(mapping.activity) or "").strip()
+    if not case_key or not activity:
+        return None
+    ts = parse_timestamp(row.get(mapping.timestamp) or "", mapping.timestamp_format)
+    if ts is None:
+        return None
+    return NormalizedEvent(
+        case_key=case_key,
+        activity=activity,
+        timestamp=ts,
+        resource=_opt_field(row, mapping.resource),
+        cost=parse_cost(row.get(mapping.cost)) if mapping.cost else None,
+        lifecycle=_opt_field(row, mapping.lifecycle),
+    )
+
+
 def normalize_rows(
     rows: Iterable[dict[str, str]],
     mapping: ColumnMapping,

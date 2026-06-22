@@ -15,6 +15,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
+  type BottleneckReport,
   type DiscoveryParams,
   discoverHeuristicMiner,
   discoverInductiveMiner,
@@ -25,13 +26,14 @@ import {
 import ActivityNodeCard, { type ActivityCardData } from "./ActivityNodeCard";
 import VariantsPanel from "./VariantsPanel";
 import PerformancePanel from "./PerformancePanel";
+import BottlenecksPanel from "./BottlenecksPanel";
 import { formatDuration } from "../format";
 
 const nodeTypes = { activity: ActivityNodeCard };
 
 type EdgeColorMode = "frequency" | "time";
 type Algorithm = "heuristic" | "inductive";
-type SidePanel = "variants" | "performance" | null;
+type SidePanel = "variants" | "performance" | "bottlenecks" | null;
 
 function pathEdgeIds(sequence: string[]): Set<string> {
   const ids = new Set<string>();
@@ -90,24 +92,30 @@ function buildEdges(
   graph: ProcessGraphData,
   mode: EdgeColorMode,
   highlight: Set<string> | null,
+  bottleneckEdges: Set<string>,
 ): Edge[] {
   const maxFreq = Math.max(1, ...graph.edges.map((e) => e.frequency));
   const maxTime = Math.max(1, ...graph.edges.map((e) => e.avg_duration_seconds));
   return graph.edges.map((e) => {
     const id = `${e.source}->${e.target}`;
     const onPath = highlight?.has(id) ?? false;
+    const isBottleneck = bottleneckEdges.has(id);
     const dimmed = highlight != null && !onPath;
     const value = mode === "frequency" ? e.frequency : e.avg_duration_seconds;
     const max = mode === "frequency" ? maxFreq : maxTime;
-    const color = onPath ? "#f97316" : edgeColor(value, max, mode);
+    const color = isBottleneck
+      ? "#dc2626"
+      : onPath
+        ? "#f97316"
+        : edgeColor(value, max, mode);
     const baseWidth = 1 + (mode === "frequency" ? e.frequency / maxFreq : 0.5) * 5;
-    const width = onPath ? Math.max(baseWidth, 3.5) : baseWidth;
+    const width = isBottleneck || onPath ? Math.max(baseWidth, 3.5) : baseWidth;
     return {
       id,
       source: e.source,
       target: e.target,
       type: "smoothstep",
-      animated: onPath || e.frequency / maxFreq > 0.5,
+      animated: onPath || isBottleneck || e.frequency / maxFreq > 0.5,
       label:
         mode === "frequency"
           ? e.frequency.toLocaleString()
@@ -118,7 +126,7 @@ function buildEdges(
       style: {
         stroke: color,
         strokeWidth: width,
-        opacity: dimmed ? 0.18 : 1,
+        opacity: dimmed && !isBottleneck ? 0.18 : 1,
       },
       markerEnd: { type: MarkerType.ArrowClosed, color },
     };
@@ -144,6 +152,7 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
   const [selected, setSelected] = useState<ActivityCardData | null>(null);
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
   const [variant, setVariant] = useState<Variant | null>(null);
+  const [bottlenecks, setBottlenecks] = useState<BottleneckReport | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -176,13 +185,38 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
     [variant],
   );
 
-  useEffect(() => {
-    if (laidOut) setNodes(laidOut.nodes);
-  }, [laidOut, setNodes]);
+  const bottleneckEdges = useMemo(() => {
+    const s = new Set<string>();
+    bottlenecks?.bottlenecks.forEach((b) => {
+      if (b.kind === "transition" && b.target) s.add(`${b.source}->${b.target}`);
+    });
+    return s;
+  }, [bottlenecks]);
+
+  const bottleneckNodes = useMemo(() => {
+    const s = new Set<string>();
+    bottlenecks?.bottlenecks.forEach((b) => {
+      if (b.kind === "activity") s.add(b.source);
+    });
+    return s;
+  }, [bottlenecks]);
 
   useEffect(() => {
-    if (graph) setEdges(buildEdges(graph, colorMode, highlight));
-  }, [graph, colorMode, highlight, setEdges]);
+    if (!laidOut) return;
+    setNodes(
+      laidOut.nodes.map((n) => ({
+        ...n,
+        data: {
+          ...(n.data as ActivityCardData),
+          isBottleneck: bottleneckNodes.has(n.id),
+        },
+      })),
+    );
+  }, [laidOut, bottleneckNodes, setNodes]);
+
+  useEffect(() => {
+    if (graph) setEdges(buildEdges(graph, colorMode, highlight, bottleneckEdges));
+  }, [graph, colorMode, highlight, bottleneckEdges, setEdges]);
 
   const onNodeClick = useCallback((_: unknown, node: Node) => {
     setSelected(node.data as ActivityCardData);
@@ -292,6 +326,12 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
           >
             Performance
           </button>
+          <button
+            className={sidePanel === "bottlenecks" ? "" : "secondary"}
+            onClick={() => togglePanel("bottlenecks")}
+          >
+            Bottlenecks
+          </button>
           <button className="secondary" onClick={exportBpmn} disabled={exporting}>
             {exporting ? "Exporting…" : "Export BPMN"}
           </button>
@@ -365,6 +405,13 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
           />
         )}
         {sidePanel === "performance" && <PerformancePanel logId={logId} />}
+        {sidePanel === "bottlenecks" && (
+          <BottlenecksPanel
+            logId={logId}
+            logName={logName}
+            onChange={setBottlenecks}
+          />
+        )}
       </div>
     </div>
   );
