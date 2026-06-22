@@ -183,6 +183,38 @@ export interface ConnectorInfo {
   description: string;
 }
 
+export interface CaseDeviation {
+  case_key: string;
+  fitness: number;
+  is_fitting: boolean;
+  deviations: string[];
+}
+
+export interface DeviationStat {
+  kind: "missing" | "unexpected" | "order";
+  activity: string;
+  description: string;
+  case_count: number;
+}
+
+export interface ConformanceReport {
+  log_id: string;
+  method: string;
+  fitness: number;
+  fitting_case_count: number;
+  case_count: number;
+  percentage_fitting: number;
+  deviation_summary: DeviationStat[];
+  case_deviations: CaseDeviation[];
+  explanation: string | null;
+  explanation_source: string | null;
+}
+
+export interface ConformanceParams {
+  method?: string;
+  explain?: boolean;
+}
+
 export interface CurrentUser {
   id: string;
   email: string;
@@ -394,4 +426,60 @@ export async function downloadBottlenecks(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+export async function importXes(
+  file: File,
+  name: string,
+): Promise<ImportResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("name", name);
+  return handle<ImportResult>(
+    await fetch("/api/logs/import-xes", {
+      method: "POST",
+      headers: authHeaders(),
+      body: form,
+    }),
+  );
+}
+
+export async function downloadXes(
+  logId: string,
+  logName: string,
+): Promise<void> {
+  const resp = await fetch(`/api/logs/${logId}/export/xes`, {
+    headers: authHeaders(),
+  });
+  if (!resp.ok) {
+    if (resp.status === 401) clearToken();
+    throw new Error(`XES export failed (${resp.status})`);
+  }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${logName || "event-log"}.xes`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function checkConformance(
+  logId: string,
+  bpmnFile: File,
+  params: ConformanceParams,
+): Promise<ConformanceReport> {
+  const form = new FormData();
+  form.append("bpmn", bpmnFile);
+  form.append("method", params.method ?? "alignment");
+  form.append("explain", params.explain ? "true" : "false");
+  return handle<ConformanceReport>(
+    await fetch(`/api/analysis/${logId}/conformance`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: form,
+    }),
+  );
 }

@@ -27,13 +27,14 @@ import ActivityNodeCard, { type ActivityCardData } from "./ActivityNodeCard";
 import VariantsPanel from "./VariantsPanel";
 import PerformancePanel from "./PerformancePanel";
 import BottlenecksPanel from "./BottlenecksPanel";
+import ConformancePanel from "./ConformancePanel";
 import { formatDuration } from "../format";
 
 const nodeTypes = { activity: ActivityNodeCard };
 
 type EdgeColorMode = "frequency" | "time";
 type Algorithm = "heuristic" | "inductive";
-type SidePanel = "variants" | "performance" | "bottlenecks" | null;
+type SidePanel = "variants" | "performance" | "bottlenecks" | "conformance" | null;
 
 function pathEdgeIds(sequence: string[]): Set<string> {
   const ids = new Set<string>();
@@ -332,6 +333,12 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
           >
             Bottlenecks
           </button>
+          <button
+            className={sidePanel === "conformance" ? "" : "secondary"}
+            onClick={() => togglePanel("conformance")}
+          >
+            Conformance
+          </button>
           <button className="secondary" onClick={exportBpmn} disabled={exporting}>
             {exporting ? "Exporting…" : "Export BPMN"}
           </button>
@@ -410,6 +417,12 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
             logId={logId}
             logName={logName}
             onChange={setBottlenecks}
+          />
+        )}
+        {sidePanel === "conformance" && (
+          <ConformancePanel
+            logId={logId}
+            onChange={() => {}}
           />
         )}
       </div>

@@ -128,3 +128,56 @@ class BottleneckReport(BaseModel):
     top: list[Bottleneck] = Field(..., description="Top-N slowest, for the summary")
     summary: list[str] = Field(..., description="Plain-text Top-N lines, exportable")
     window_days: int | None = None
+
+
+# ── Conformance checking (Story 3.3) ──────────────────────────────────────────
+
+
+class ConformanceRequest(BaseModel):
+    method: str = Field(
+        "alignment",
+        description="Fitness metric: 'alignment' (precise) or 'token' (fast). "
+        "Per-case deviations are always derived from alignments.",
+    )
+    explain: bool = Field(
+        False,
+        description="Generate an AI/heuristic natural-language explanation of the "
+        "deviations (Story 6.2)",
+    )
+
+
+class CaseDeviation(BaseModel):
+    case_key: str
+    fitness: float = Field(..., description="Trace fitness 0..1")
+    is_fitting: bool
+    deviations: list[str] = Field(
+        default_factory=list, description="Plain-text deviation descriptions"
+    )
+
+
+class DeviationStat(BaseModel):
+    kind: str = Field(..., description="'missing', 'unexpected' or 'order'")
+    activity: str
+    description: str
+    case_count: int = Field(..., description="How many cases show this deviation")
+
+
+class ConformanceReport(BaseModel):
+    log_id: str
+    method: str
+    fitness: float = Field(..., description="Overall log fitness (0..1)")
+    fitting_case_count: int
+    case_count: int
+    percentage_fitting: float = Field(..., description="Share of fully fitting cases (0..100)")
+    deviation_summary: list[DeviationStat] = Field(
+        ..., description="Deviations aggregated by activity, most frequent first"
+    )
+    case_deviations: list[CaseDeviation] = Field(
+        ..., description="Per-case deviations, least conforming first"
+    )
+    explanation: str | None = Field(
+        None, description="Natural-language deviation summary (Story 6.2)"
+    )
+    explanation_source: str | None = Field(
+        None, description="'ai' or 'heuristic'"
+    )

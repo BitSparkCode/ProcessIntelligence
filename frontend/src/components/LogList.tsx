@@ -1,4 +1,4 @@
-import { EventLog, deleteLog } from "../api";
+import { EventLog, deleteLog, downloadXes } from "../api";
 
 interface Props {
   logs: EventLog[];
@@ -39,6 +39,12 @@ export default function LogList({ logs, onChanged, onDiscover }: Props) {
             <td>{new Date(log.imported_at).toLocaleString()}</td>
             <td className="row-actions">
               <button onClick={() => onDiscover(log)}>Discover</button>
+              <button
+                className="secondary"
+                onClick={() => downloadXes(log.id, log.name)}
+              >
+                Export XES
+              </button>
               <button className="secondary" onClick={() => handleDelete(log.id)}>
                 Delete
               </button>
