@@ -148,6 +148,41 @@ export interface PerformanceParams {
   histogram_bins?: number;
 }
 
+export interface Bottleneck {
+  kind: "transition" | "activity";
+  label: string;
+  source: string;
+  target: string | null;
+  avg_waiting_seconds: number;
+  max_waiting_seconds: number;
+  frequency: number;
+  severity: number;
+}
+
+export interface BottleneckReport {
+  log_id: string;
+  percentile: number;
+  threshold_seconds: number;
+  case_count: number;
+  bottleneck_count: number;
+  bottlenecks: Bottleneck[];
+  top: Bottleneck[];
+  summary: string[];
+  window_days: number | null;
+}
+
+export interface BottleneckParams {
+  percentile?: number;
+  top_n?: number;
+  window_days?: number | null;
+}
+
+export interface ConnectorInfo {
+  key: string;
+  title: string;
+  description: string;
+}
+
 export interface CurrentUser {
   id: string;
   email: string;
@@ -322,4 +357,41 @@ export async function analyzePerformance(
       body: JSON.stringify(params),
     }),
   );
+}
+
+export async function detectBottlenecks(
+  logId: string,
+  params: BottleneckParams,
+): Promise<BottleneckReport> {
+  return handle<BottleneckReport>(
+    await fetch(`/api/analysis/${logId}/bottlenecks`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(params),
+    }),
+  );
+}
+
+export async function downloadBottlenecks(
+  logId: string,
+  logName: string,
+  percentile: number,
+): Promise<void> {
+  const resp = await fetch(
+    `/api/analysis/${logId}/bottlenecks/export?percentile=${percentile}`,
+    { headers: authHeaders() },
+  );
+  if (!resp.ok) {
+    if (resp.status === 401) clearToken();
+    throw new Error(`Bottleneck export failed (${resp.status})`);
+  }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${logName || "process"}-bottlenecks.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

@@ -86,6 +86,37 @@ def test_performance_kpis_and_histogram(auth_client):
     assert act["A"]["avg_duration_to_next_seconds"] == 3000.0
 
 
+def test_bottlenecks_flagged_at_percentile(auth_client):
+    log_id = _import(auth_client)
+    resp = auth_client.post(f"/api/analysis/{log_id}/bottlenecks", json={})
+    assert resp.status_code == 200, resp.text
+    report = resp.json()
+
+    # Waiting times pooled: A->B/B->C are 3600s, A->C is 1800s. 90th pct = 3600s.
+    assert report["percentile"] == 90.0
+    assert report["threshold_seconds"] == 3600.0
+    labels = {b["label"] for b in report["bottlenecks"]}
+    # The slow 1-hour steps are flagged; the fast 30-min skip A->C is not.
+    assert "A \u2192 B" in labels
+    assert "B \u2192 C" in labels
+    assert "A \u2192 C" not in labels
+    assert report["bottleneck_count"] == len(report["bottlenecks"])
+
+    top = report["top"][0]
+    assert top["avg_waiting_seconds"] == 3600.0
+    assert top["severity"] == 1.0
+    assert any("percentile" in line for line in report["summary"])
+
+
+def test_bottlenecks_export_is_text(auth_client):
+    log_id = _import(auth_client)
+    resp = auth_client.get(f"/api/analysis/{log_id}/bottlenecks/export")
+    assert resp.status_code == 200, resp.text
+    assert "text/plain" in resp.headers["content-type"]
+    assert "attachment" in resp.headers["content-disposition"]
+    assert "\u2192" in resp.text  # contains at least one "source -> target" line
+
+
 def test_performance_requires_owned_log(client):
     from tests.conftest import register
 
@@ -98,4 +129,7 @@ def test_performance_requires_owned_log(client):
     assert client.post(f"/api/analysis/{log_id}/variants", json={}).status_code == 404
     assert (
         client.post(f"/api/analysis/{log_id}/performance", json={}).status_code == 404
+    )
+    assert (
+        client.post(f"/api/analysis/{log_id}/bottlenecks", json={}).status_code == 404
     )

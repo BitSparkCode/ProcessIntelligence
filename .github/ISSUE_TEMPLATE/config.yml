@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Build your own connector
+    url: https://github.com/BitSparkCode/ProcessIntelligence/blob/main/docs/connectors.md
+    about: Guide for adding a new data-source connector.
+  - name: Contributing guide
+    url: https://github.com/BitSparkCode/ProcessIntelligence/blob/main/CONTRIBUTING.md
+    about: How to set up the project and open a pull request.

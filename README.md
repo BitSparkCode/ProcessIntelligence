@@ -1,14 +1,19 @@
 # Process Intelligence
 
+[![CI](https://github.com/BitSparkCode/ProcessIntelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/BitSparkCode/ProcessIntelligence/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 Open-source, **AI-first** process &amp; task mining tool (MVP). Import event logs,
 discover and visualize processes on an n8n-style interactive canvas, and analyze
 performance. Built with **FastAPI + PM4Py** (backend), **React + TypeScript +
 React Flow** (frontend) and **PostgreSQL** (storage).
 
 > This repository is being built incrementally, sprint by sprint, against the MVP
-> backlog. **Sprint 1** delivered the foundation (event-log model, CSV import,
-> Docker Compose). **Sprint 2** adds multi-tenant auth, AI-assisted data linking,
-> Heuristic Miner discovery, and the next-gen interactive process graph.
+> backlog: **Sprint 1** the foundation (event-log model, CSV import, Docker
+> Compose), **Sprint 2** multi-tenant auth + AI-assisted data linking + Heuristic
+> Miner + interactive graph, **Sprint 3** Inductive Miner + BPMN export + variants
+> + throughput, **Sprint 4** a pluggable connector framework, bottleneck detection
+> and open-source scaffolding.
 
 ## Quickstart (Docker Compose)
 
@@ -56,6 +61,14 @@ PostgreSQL `5432`.
 | 2.4 | Variant analysis: distinct case paths ranked by frequency with volume share (%) and average throughput; Top-N / min-frequency filters; click a variant to highlight its path on the graph |
 | 3.1 | Throughput dashboard: avg/median/min/max case duration KPIs, per-activity and transition waiting times, a throughput-time histogram, and a time-window filter (30/90/365 days) |
 
+### Sprint 4 — connectors, bottlenecks & OSS
+
+| Story | Description |
+| ----- | ----------- |
+| 1.4 | Pluggable **connector framework** (`BaseConnector` + `validate`/`extract`/`transform`): import event logs directly from any SQL database or JSON REST API (`POST /api/connectors/{sql,rest}/import`). See the [build-your-own-connector guide](docs/connectors.md) |
+| 3.2 | **Bottleneck detection**: flags transitions/activities whose mean waiting time exceeds a configurable percentile (default 90th), highlights them in red on the graph, and exports a Top-N text summary (`POST /api/analysis/{id}/bottlenecks`) |
+| 5.3 | Open-source scaffolding: Apache 2.0 [LICENSE](LICENSE), [CONTRIBUTING](CONTRIBUTING.md) guide, issue/PR templates, and CI that runs lint + types + tests on every PR |
+
 ### AI configuration
 
 The product is AI-first but **runs fully offline by default**. With
@@ -72,6 +85,24 @@ The product is AI-first but **runs fully offline by default**. With
 4. Click **Discover** on a log to open the interactive process graph.
 
 A sample log lives at [`samples/sample_log.csv`](samples/sample_log.csv).
+
+## Importing from a database or REST API
+
+Besides CSV, logs can be imported through the connector framework. Example (SQL):
+
+```bash
+curl -X POST http://localhost:8000/api/connectors/sql/import \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "name": "orders",
+    "connection_url": "postgresql+psycopg2://user:pw@host:5432/db",
+    "query": "SELECT order_id, step, changed_at, agent FROM order_events",
+    "mapping": {"case_id": "order_id", "activity": "step", "timestamp": "changed_at", "resource": "agent"}
+  }'
+```
+
+`GET /api/connectors` lists the available connectors. See the
+[build-your-own-connector guide](docs/connectors.md) to add your own.
 
 ## Local development
 
@@ -106,10 +137,33 @@ npm run dev        # http://localhost:5173 (proxies /api to localhost:8000)
 
 ```
 frontend (React + Vite, nginx)  ──/api──▶  backend (FastAPI)  ──▶  PostgreSQL
-                                              │
-                                              └─ PM4Py mining engine (later sprints)
+   React Flow canvas, panels                  │
+                                              ├─ services/
+                                              │    csv_import, log_storage
+                                              │    discovery, inductive (PM4Py)
+                                              │    variants, performance, bottleneck
+                                              │    connectors/ (sql, rest, ...)
+                                              │    ai/ (provider-agnostic LLM)
+                                              └─ PM4Py mining engine
 ```
+
+- **`backend/app/api/routes`** — FastAPI routers (`auth`, `logs`, `discovery`,
+  `analysis`, `connectors`, `health`).
+- **`backend/app/services`** — the domain logic; each feature is a small,
+  unit-testable module that reads from the internal event-log schema.
+- **`backend/app/models` / `schemas`** — SQLAlchemy models and Pydantic
+  request/response contracts.
+- **`frontend/src`** — the React app; `ProcessGraph` hosts the canvas and the
+  Variants / Performance / Bottlenecks side panels.
 
 The internal event-log schema is import-source agnostic: every downstream mining
 feature (discovery, performance, conformance) reads from it, regardless of whether
-data came from CSV, XES, a database adapter or a workflow engine.
+data came from CSV, a database, a REST API or a workflow engine. New sources plug
+in via the [connector framework](docs/connectors.md) without touching core code.
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the dev
+setup, code style, and PR workflow, and the
+[connector guide](docs/connectors.md) to add a new data source. The project is
+licensed under [Apache 2.0](LICENSE).
