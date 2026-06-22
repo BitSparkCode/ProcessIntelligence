@@ -64,6 +64,30 @@ def test_bpmn_export_is_valid_xml(auth_client):
     assert {"A", "B", "C"} <= names
 
 
+def test_bpmn_export_has_laid_out_diagram(auth_client):
+    """Shapes must have real, distinct coordinates so modelers don't stack them."""
+    import xml.etree.ElementTree as ET
+
+    log_id = _import(auth_client)
+    resp = auth_client.get(f"/api/discovery/{log_id}/bpmn")
+    assert resp.status_code == 200, resp.text
+
+    root = ET.fromstring(resp.text)
+    bounds = [el for el in root.iter() if el.tag.endswith("}Bounds")]
+    assert bounds, "export contains no BPMNDI bounds"
+
+    positions = {(b.get("x"), b.get("y")) for b in bounds}
+    # A broken (un-laid-out) export puts every shape at the same 0,0 origin.
+    assert positions != {("0", "0")}
+    assert len(positions) > 1, "all shapes share one position (overlapping pile)"
+    # Width/height must be non-zero so shapes are actually visible.
+    assert all(float(b.get("width")) > 0 and float(b.get("height")) > 0 for b in bounds)
+
+    waypoints = [el for el in root.iter() if el.tag.endswith("}waypoint")]
+    assert waypoints, "export contains no edge waypoints"
+    assert {(w.get("x"), w.get("y")) for w in waypoints} != {("0", "0")}
+
+
 def test_inductive_requires_owned_log(client):
     from tests.conftest import register
 
