@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
@@ -10,12 +10,15 @@ from app.models import EventLog, User
 from app.schemas.analysis import (
     BottleneckReport,
     BottleneckRequest,
+    ConformanceReport,
+    ConformanceRequest,
     PerformanceReport,
     PerformanceRequest,
     VariantReport,
     VariantRequest,
 )
-from app.services import bottleneck, performance, variants
+from app.services import bottleneck, conformance, performance, variants
+from app.services.conformance import ConformanceError
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
@@ -77,3 +80,34 @@ def export_bottlenecks(
         "\n".join(report.summary) + "\n",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/{log_id}/conformance", response_model=ConformanceReport)
+async def check_conformance(
+    log_id: str,
+    bpmn: UploadFile = File(..., description="Reference (soll) BPMN 2.0 model"),
+    method: str = Form("alignment"),
+    explain: bool = Form(False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ConformanceReport:
+    _get_owned_log(db, log_id, current_user)
+    fname = (bpmn.filename or "").lower()
+    if not fname.endswith((".bpmn", ".xml")):
+        raise HTTPException(
+            status_code=400, detail="Only .bpmn / .xml reference models are supported"
+        )
+    if method not in ("alignment", "token"):
+        raise HTTPException(status_code=422, detail="method must be 'alignment' or 'token'")
+
+    raw = await bpmn.read()
+    try:
+        bpmn_xml = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="BPMN file must be UTF-8 text") from exc
+
+    params = ConformanceRequest(method=method, explain=explain)
+    try:
+        return conformance.check_conformance(db, log_id, bpmn_xml, params)
+    except ConformanceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

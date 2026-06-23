@@ -11,6 +11,7 @@ import Auth from "./components/Auth";
 import CsvImport from "./components/CsvImport";
 import LogList from "./components/LogList";
 import ProcessGraph from "./components/ProcessGraph";
+import XesImport from "./components/XesImport";
 
 export default function App() {
   const [user, setUser] = useState<CurrentUser | null>(null);
@@ -100,6 +101,15 @@ export default function App() {
       <div className="card">
         <h2>Import event log (CSV)</h2>
         <CsvImport onImported={refresh} />
+      </div>
+
+      <div className="card">
+        <h2>Import event log (XES)</h2>
+        <p className="muted">
+          Upload a standard .xes or .xes.gz file &mdash; no column mapping
+          needed.
+        </p>
+        <XesImport onImported={refresh} />
       </div>
 
       <div className="card">

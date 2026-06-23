@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,7 +20,8 @@ from app.schemas.event_log import (
     ImportResult,
     MappingSuggestion,
 )
-from app.services import ai, csv_import, log_storage
+from app.services import ai, csv_import, log_storage, xes
+from app.services.xes import XesError
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
 settings = get_settings()
@@ -39,6 +41,20 @@ def _upload_path(upload_id: str) -> str:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid upload id") from exc
     return os.path.join(_uploads_dir(), f"{upload_id}.csv")
+
+
+async def _stream_to_disk(file: UploadFile, dest: str) -> None:
+    written = 0
+    with open(dest, "wb") as out:
+        while chunk := await file.read(UPLOAD_CHUNK):
+            written += len(chunk)
+            if written > settings.max_upload_bytes:
+                out.close()
+                os.remove(dest)
+                raise HTTPException(
+                    status_code=413, detail="File exceeds maximum upload size"
+                )
+            out.write(chunk)
 
 
 def _get_owned_log(db: Session, log_id: str, user: User) -> EventLog:
@@ -72,15 +88,7 @@ async def upload_csv(
 
     upload_id = str(uuid.uuid4())
     dest = _upload_path(upload_id)
-    written = 0
-    with open(dest, "wb") as out:
-        while chunk := await file.read(UPLOAD_CHUNK):
-            written += len(chunk)
-            if written > settings.max_upload_bytes:
-                out.close()
-                os.remove(dest)
-                raise HTTPException(status_code=413, detail="File exceeds maximum upload size")
-            out.write(chunk)
+    await _stream_to_disk(file, dest)
 
     preview = csv_import.preview_csv(dest)
     if not preview.columns:
@@ -91,6 +99,57 @@ async def upload_csv(
     # deterministic heuristics when AI is disabled.
     suggestion = ai.suggest_column_mapping(preview.columns, preview.rows)
     return UploadResponse(upload_id=upload_id, preview=preview, suggestion=suggestion)
+
+
+@router.post("/import-xes", response_model=ImportResult)
+async def import_xes_log(
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ImportResult:
+    fname = (file.filename or "").lower()
+    if not (fname.endswith(".xes") or fname.endswith(".xes.gz")):
+        raise HTTPException(
+            status_code=400, detail="Only .xes and .xes.gz files are supported"
+        )
+
+    suffix = ".xes.gz" if fname.endswith(".xes.gz") else ".xes"
+    dest = os.path.join(_uploads_dir(), f"{uuid.uuid4()}{suffix}")
+    await _stream_to_disk(file, dest)
+    try:
+        events = xes.import_xes(dest)
+    except XesError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        try:
+            os.remove(dest)
+        except OSError:
+            pass
+
+    return log_storage.persist_log(
+        db,
+        workspace_id=current_user.workspace_id,
+        name=name or "Imported XES log",
+        source="xes",
+        events=events,
+    )
+
+
+@router.get("/{log_id}/export/xes")
+def export_xes_log(
+    log_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    log = _get_owned_log(db, log_id, current_user)
+    xml = xes.export_xes(db, log_id)
+    filename = f"{log.name or 'event-log'}.xes"
+    return Response(
+        content=xml,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/import", response_model=ImportResult)

@@ -13,7 +13,8 @@ React Flow** (frontend) and **PostgreSQL** (storage).
 > Compose), **Sprint 2** multi-tenant auth + AI-assisted data linking + Heuristic
 > Miner + interactive graph, **Sprint 3** Inductive Miner + BPMN export + variants
 > + throughput, **Sprint 4** a pluggable connector framework, bottleneck detection
-> and open-source scaffolding.
+> and open-source scaffolding, **Sprint 5** conformance checking + AI deviation
+> explanation + XES import/export + privacy-by-default.
 
 ## Quickstart (Docker Compose)
 
@@ -69,14 +70,26 @@ PostgreSQL `5432`.
 | 3.2 | **Bottleneck detection**: flags transitions/activities whose mean waiting time exceeds a configurable percentile (default 90th), highlights them in red on the graph, and exports a Top-N text summary (`POST /api/analysis/{id}/bottlenecks`) |
 | 5.3 | Open-source scaffolding: Apache 2.0 [LICENSE](LICENSE), [CONTRIBUTING](CONTRIBUTING.md) guide, issue/PR templates, and CI that runs lint + types + tests on every PR |
 
+### Sprint 5 — conformance, XES & privacy
+
+| Story | Description |
+| ----- | ----------- |
+| 3.3 | **Conformance checking** against a reference BPMN model (`POST /api/analysis/{id}/conformance`): alignment-based per-case deviations (missing / unexpected / reordered activities), overall fitness score, deviation summary sorted by frequency |
+| 6.2 | **AI-driven deviation explanation** (Story 6.2): optional natural-language summary via LLM (or deterministic fallback) explaining the most important conformance gaps |
+| 1.2 | **XES import/export** (IEEE 1849): upload `.xes` / `.xes.gz` files (`POST /api/logs/import-xes`), export stored logs as standard XES (`GET /api/logs/{id}/export/xes`), round-trip tested |
+| 5.4 | **Privacy-by-default**: documented [data categories](docs/privacy.md), full right-to-erasure (cascade-deletes all events, cases, activities, resources, attributes), privacy-friendly defaults (no resource names unless mapped, no external API calls unless explicitly configured) |
+
 ### AI configuration
 
 The product is AI-first but **runs fully offline by default**. With
 `AI_PROVIDER=none` (the default), data linking uses deterministic heuristics. Set
 `AI_PROVIDER=openai` (or `anthropic`) and the matching `OPENAI_API_KEY` /
-`ANTHROPIC_API_KEY` to enable live AI suggestions. See `.env.example`.
+`ANTHROPIC_API_KEY` to enable live AI suggestions and conformance explanations.
+See `.env.example`.
 
-## Importing a CSV
+## Importing event data
+
+### CSV
 
 1. Register or sign in (each account gets its own isolated workspace).
 2. Choose a `.csv` file. The importer proposes a column mapping (AI or heuristic).
@@ -85,6 +98,23 @@ The product is AI-first but **runs fully offline by default**. With
 4. Click **Discover** on a log to open the interactive process graph.
 
 A sample log lives at [`samples/sample_log.csv`](samples/sample_log.csv).
+
+### XES (IEEE 1849 standard)
+
+Upload a `.xes` or `.xes.gz` file directly — no column mapping needed:
+
+```bash
+curl -X POST http://localhost:8000/api/logs/import-xes \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@event-log.xes" -F "name=BPI Challenge 2023"
+```
+
+Export an existing log back to XES:
+
+```bash
+curl http://localhost:8000/api/logs/<log_id>/export/xes \
+  -H "Authorization: Bearer $TOKEN" -o event-log.xes
+```
 
 ## Importing from a database or REST API
 
@@ -142,6 +172,8 @@ frontend (React + Vite, nginx)  ──/api──▶  backend (FastAPI)  ──�
                                               │    csv_import, log_storage
                                               │    discovery, inductive (PM4Py)
                                               │    variants, performance, bottleneck
+                                              │    conformance (BPMN replay)
+                                              │    xes (XES import/export)
                                               │    connectors/ (sql, rest, ...)
                                               │    ai/ (provider-agnostic LLM)
                                               └─ PM4Py mining engine
@@ -158,8 +190,14 @@ frontend (React + Vite, nginx)  ──/api──▶  backend (FastAPI)  ──�
 
 The internal event-log schema is import-source agnostic: every downstream mining
 feature (discovery, performance, conformance) reads from it, regardless of whether
-data came from CSV, a database, a REST API or a workflow engine. New sources plug
-in via the [connector framework](docs/connectors.md) without touching core code.
+data came from CSV, XES, a database, a REST API or a workflow engine. New sources
+plug in via the [connector framework](docs/connectors.md) without touching core code.
+
+## Privacy
+
+Process Intelligence is privacy-by-default. See [docs/privacy.md](docs/privacy.md)
+for the full data-category inventory, retention policy, erasure procedure and
+deployer recommendations.
 
 ## Contributing
 
