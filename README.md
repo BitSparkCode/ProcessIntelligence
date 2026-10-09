@@ -14,7 +14,8 @@ React Flow** (frontend) and **PostgreSQL** (storage).
 > Miner + interactive graph, **Sprint 3** Inductive Miner + BPMN export + variants
 > + throughput, **Sprint 4** a pluggable connector framework, bottleneck detection
 > and open-source scaffolding, **Sprint 5** conformance checking + AI deviation
-> explanation + XES import/export + privacy-by-default.
+> explanations + XES + privacy, **Sprint 6** a Celonis-style explorer (filters,
+> cases, replay) + what-if simulation + AI data preparation.
 
 ## Quickstart (Docker Compose)
 
@@ -78,6 +79,19 @@ PostgreSQL `5432`.
 | 6.2 | **AI-driven deviation explanation** (Story 6.2): optional natural-language summary via LLM (or deterministic fallback) explaining the most important conformance gaps |
 | 1.2 | **XES import/export** (IEEE 1849): upload `.xes` / `.xes.gz` files (`POST /api/logs/import-xes`), export stored logs as standard XES (`GET /api/logs/{id}/export/xes`), round-trip tested |
 | 5.4 | **Privacy-by-default**: documented [data categories](docs/privacy.md), full right-to-erasure (cascade-deletes all events, cases, activities, resources, attributes), privacy-friendly defaults (no resource names unless mapped, no external API calls unless explicitly configured) |
+
+### Sprint 6 — explorer, simulation & data prep
+
+Disco-style log exploration plus what-if simulation, in a Celonis-inspired UI.
+
+| Story | Description |
+| ----- | ----------- |
+| 7.1 | **Log-wide filters** (`LogFilter`): timeframe, start/end activities, include/exclude activities, resources, case-duration bounds. Applied server-side to discovery, variants, performance, bottlenecks, cases, overview, replay and simulation |
+| 7.2 | **Overview** (`POST /api/analysis/{id}/overview`): case/event/activity counts, throughput stats, cases-over-time, top activities and resources |
+| 7.3 | **Case explorer** (`POST .../cases`, `.../case-events`): searchable, sortable, paginated case list with per-event timeline, wait times and one-click path highlight on the map |
+| 7.4 | **Case replay** (`POST .../replay`): animated token animation over the discovered map (up to 500 cases, real timestamps, play/pause/speed/scrub) |
+| 7.5 | **What-if simulation** (`POST .../simulate`): seeded discrete-event simulation on the empirical model — Poisson arrivals, bootstrapped service times, transition sampling, per-activity resource pools and speed multipliers — reporting simulated vs. observed throughput, a duration histogram and per-activity utilization/wait |
+| 6.3 | **AI data prep** (`POST /api/logs/prep-advice`): case attribution (single or composite case-key detection) and cleaning advice (activity-name normalization, lifecycle filtering, duplicates, missing values, timestamp parse failures). Works offline with deterministic heuristics; uses the configured LLM when enabled. Import honors `case_id_columns` (composite key), `normalize_activities` and `lifecycle_keep` |
 
 ### AI configuration
 

@@ -16,6 +16,17 @@ class ColumnMapping(BaseModel):
     lifecycle: str | None = Field(None, description="Optional lifecycle status column")
     # Optional explicit timestamp format (strftime). If omitted, inferred automatically.
     timestamp_format: str | None = None
+    # Sprint 6 data prep: when set, the case id is built by concatenating these
+    # columns (e.g. customer+order) instead of reading ``case_id``.
+    case_id_columns: list[str] | None = Field(
+        None, description="Composite case-id source columns"
+    )
+    # Normalize activity spelling variants (case/whitespace) onto the most
+    # frequent spelling, merging e.g. 'Approve', 'approve ' into one activity.
+    normalize_activities: bool = False
+    # Keep only events whose lifecycle value is in this list (e.g. ["complete"]
+    # to collapse start/complete pairs into single events).
+    lifecycle_keep: list[str] | None = None
 
 
 class CsvPreview(BaseModel):
@@ -67,5 +78,48 @@ class MappingSuggestion(BaseModel):
     mapping: SuggestedColumnMapping
     confidence: float = Field(0.0, ge=0.0, le=1.0)
     reasoning: str = ""
+    source: str = "heuristic"  # heuristic | ai
+    ai_enabled: bool = False
+
+
+# ── AI data prep: dataset cleaning + case attribution (Sprint 6) ──────────────
+
+
+class CaseAttribution(BaseModel):
+    """How to attribute rows to cases when no clean case-id column exists."""
+
+    kind: str = Field(
+        ..., description="'single', 'composite' or 'none'"
+    )
+    columns: list[str] = Field(
+        default_factory=list,
+        description="Source columns forming the case id (order matters)",
+    )
+    confidence: float = Field(0.0, ge=0.0, le=1.0)
+    reasoning: str = ""
+
+
+class CleaningSuggestion(BaseModel):
+    severity: str = Field(..., description="'info', 'warning' or 'critical'")
+    kind: str = Field(
+        ...,
+        description=(
+            "'activity_variants', 'timestamp_format', 'empty_column', "
+            "'duplicate_rows', 'missing_values', 'lifecycle_split' or 'other'"
+        ),
+    )
+    target: str | None = Field(None, description="Column the suggestion applies to")
+    message: str
+    action: str | None = Field(
+        None,
+        description="Optional machine-readable fix, e.g. 'normalize_activities'",
+    )
+
+
+class DataPrepAdvice(BaseModel):
+    """Cleaning + case-attribution advice for an uploaded dataset."""
+
+    case_attribution: CaseAttribution
+    cleaning: list[CleaningSuggestion] = Field(default_factory=list)
     source: str = "heuristic"  # heuristic | ai
     ai_enabled: bool = False

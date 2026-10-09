@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
-import { analyzePerformance, type PerformanceReport } from "../api";
+import {
+  analyzePerformance,
+  type LogFilter,
+  type PerformanceReport,
+} from "../api";
 import { formatDuration } from "../format";
 
 interface Props {
   logId: string;
+  filters?: LogFilter;
 }
 
 const WINDOWS: { label: string; value: number | null }[] = [
@@ -13,20 +18,24 @@ const WINDOWS: { label: string; value: number | null }[] = [
   { label: "365d", value: 365 },
 ];
 
-export default function PerformancePanel({ logId }: Props) {
+export default function PerformancePanel({ logId, filters }: Props) {
   const [report, setReport] = useState<PerformanceReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [windowDays, setWindowDays] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
-    analyzePerformance(logId, { window_days: windowDays, histogram_bins: 12 })
+    analyzePerformance(logId, {
+      window_days: windowDays,
+      histogram_bins: 12,
+      filters,
+    })
       .then((r) => active && setReport(r))
       .catch((e) => active && setError((e as Error).message));
     return () => {
       active = false;
     };
-  }, [logId, windowDays]);
+  }, [logId, windowDays, filters]);
 
   const maxBin = report
     ? Math.max(1, ...report.histogram.map((b) => b.count))

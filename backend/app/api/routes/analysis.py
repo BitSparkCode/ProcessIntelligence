@@ -10,14 +10,24 @@ from app.models import EventLog, User
 from app.schemas.analysis import (
     BottleneckReport,
     BottleneckRequest,
+    CaseDetailReport,
+    CaseEventsRequest,
+    CaseListReport,
+    CaseListRequest,
     ConformanceReport,
     ConformanceRequest,
+    OverviewReport,
+    OverviewRequest,
     PerformanceReport,
     PerformanceRequest,
+    ReplayReport,
+    ReplayRequest,
+    SimulationReport,
+    SimulationRequest,
     VariantReport,
     VariantRequest,
 )
-from app.services import bottleneck, conformance, performance, variants
+from app.services import bottleneck, cases, conformance, performance, simulation, variants
 from app.services.conformance import ConformanceError
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
@@ -80,6 +90,61 @@ def export_bottlenecks(
         "\n".join(report.summary) + "\n",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/{log_id}/cases", response_model=CaseListReport)
+def list_cases(
+    log_id: str,
+    params: CaseListRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CaseListReport:
+    _get_owned_log(db, log_id, current_user)
+    return cases.list_cases(db, log_id, params or CaseListRequest())
+
+
+@router.post("/{log_id}/case-events", response_model=CaseDetailReport)
+def case_events(
+    log_id: str,
+    params: CaseEventsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CaseDetailReport:
+    _get_owned_log(db, log_id, current_user)
+    return cases.case_detail(db, log_id, params)
+
+
+@router.post("/{log_id}/replay", response_model=ReplayReport)
+def replay(
+    log_id: str,
+    params: ReplayRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ReplayReport:
+    _get_owned_log(db, log_id, current_user)
+    return cases.replay_data(db, log_id, params or ReplayRequest())
+
+
+@router.post("/{log_id}/overview", response_model=OverviewReport)
+def overview(
+    log_id: str,
+    params: OverviewRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> OverviewReport:
+    _get_owned_log(db, log_id, current_user)
+    return cases.overview(db, log_id, params or OverviewRequest())
+
+
+@router.post("/{log_id}/simulate", response_model=SimulationReport)
+def simulate(
+    log_id: str,
+    params: SimulationRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SimulationReport:
+    _get_owned_log(db, log_id, current_user)
+    return simulation.simulate(db, log_id, params or SimulationRequest())
 
 
 @router.post("/{log_id}/conformance", response_model=ConformanceReport)

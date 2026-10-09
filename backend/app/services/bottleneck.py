@@ -38,9 +38,9 @@ def _percentile(values: list[float], pct: float) -> float:
 def _filter_window(traces: list[Trace], window_days: int | None) -> list[Trace]:
     if window_days is None or not traces:
         return traces
-    latest = max(t[-1][1] for t in traces if t)
+    latest = max(t[-1].timestamp for t in traces if t)
     cutoff = latest - timedelta(days=window_days)
-    return [t for t in traces if t and t[0][1] >= cutoff]
+    return [t for t in traces if t and t[0].timestamp >= cutoff]
 
 
 def _format_duration(seconds: float) -> str:
@@ -56,7 +56,7 @@ def _format_duration(seconds: float) -> str:
 def detect_bottlenecks(
     db: Session, log_id: str, params: BottleneckRequest
 ) -> BottleneckReport:
-    all_traces = list(load_traces(db, log_id).values())
+    all_traces = list(load_traces(db, log_id, params.filters).values())
     traces = _filter_window(all_traces, params.window_days)
 
     # Per-occurrence waiting times, grouped per transition and per activity.
@@ -65,10 +65,10 @@ def detect_bottlenecks(
     all_waits: list[float] = []
 
     for trace in traces:
-        for (a_act, a_ts), (b_act, b_ts) in zip(trace, trace[1:], strict=False):
-            gap = max((b_ts - a_ts).total_seconds(), 0.0)
-            tr_times[(a_act, b_act)].append(gap)
-            act_times[a_act].append(gap)
+        for a, b in zip(trace, trace[1:], strict=False):
+            gap = max((b.timestamp - a.timestamp).total_seconds(), 0.0)
+            tr_times[(a.activity, b.activity)].append(gap)
+            act_times[a.activity].append(gap)
             all_waits.append(gap)
 
     threshold = _percentile(all_waits, params.percentile)
@@ -118,12 +118,12 @@ def detect_bottlenecks(
         f"(threshold {_format_duration(threshold)} waiting time):"
     ]
     if top:
-        for i, b in enumerate(top, start=1):
-            kind = "transition" if b.kind == "transition" else "activity"
+        for i, bn in enumerate(top, start=1):
+            kind = "transition" if bn.kind == "transition" else "activity"
             summary.append(
-                f"{i}. {b.label} ({kind}) — avg {_format_duration(b.avg_waiting_seconds)}, "
-                f"max {_format_duration(b.max_waiting_seconds)}, "
-                f"{b.severity:g}x threshold, {b.frequency} occurrence(s)"
+                f"{i}. {bn.label} ({kind}) — avg {_format_duration(bn.avg_waiting_seconds)}, "
+                f"max {_format_duration(bn.max_waiting_seconds)}, "
+                f"{bn.severity:g}x threshold, {bn.frequency} occurrence(s)"
             )
     else:
         summary.append("No bottlenecks detected at this threshold.")

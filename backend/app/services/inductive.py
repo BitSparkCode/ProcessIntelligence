@@ -190,14 +190,16 @@ def discover_inductive_graph(db: Session, log_id: str) -> ProcessGraph:
     for trace in traces:
         if not trace:
             continue
-        start_freq[trace[0][0]] += 1
-        end_freq[trace[-1][0]] += 1
-        for act, _ts in trace:
-            activity_freq[act] += 1
-        for (a_act, a_ts), (b_act, b_ts) in zip(trace, trace[1:], strict=False):
-            pair = (a_act, b_act)
+        start_freq[trace[0].activity] += 1
+        end_freq[trace[-1].activity] += 1
+        for ev in trace:
+            activity_freq[ev.activity] += 1
+        for a, b in zip(trace, trace[1:], strict=False):
+            pair = (a.activity, b.activity)
             df_count[pair] += 1
-            df_duration[pair] += max((b_ts - a_ts).total_seconds(), 0.0)
+            df_duration[pair] += max(
+                (b.timestamp - a.timestamp).total_seconds(), 0.0
+            )
 
     edges = [
         ProcessEdge(

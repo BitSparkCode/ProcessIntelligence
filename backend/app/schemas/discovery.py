@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.schemas.filters import LogFilter
+
 
 class DiscoveryRequest(BaseModel):
     """Parameters for Heuristic Miner discovery (Story 2.1)."""
@@ -12,6 +14,7 @@ class DiscoveryRequest(BaseModel):
     frequency_threshold: int = Field(
         1, ge=1, description="Min directly-follows frequency to keep an edge"
     )
+    filters: LogFilter | None = None
 
 
 class ActivityNode(BaseModel):

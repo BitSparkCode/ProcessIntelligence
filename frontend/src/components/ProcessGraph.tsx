@@ -20,6 +20,8 @@ import {
   discoverHeuristicMiner,
   discoverInductiveMiner,
   downloadBpmn,
+  getOverview,
+  type LogFilter,
   type ProcessGraph as ProcessGraphData,
   type Variant,
 } from "../api";
@@ -28,13 +30,27 @@ import VariantsPanel from "./VariantsPanel";
 import PerformancePanel from "./PerformancePanel";
 import BottlenecksPanel from "./BottlenecksPanel";
 import ConformancePanel from "./ConformancePanel";
+import FilterPanel, { activeFilterCount } from "./FilterPanel";
+import OverviewPanel from "./OverviewPanel";
+import CasesPanel from "./CasesPanel";
+import SimulationPanel from "./SimulationPanel";
+import ReplayOverlay from "./ReplayOverlay";
 import { formatDuration } from "../format";
 
 const nodeTypes = { activity: ActivityNodeCard };
 
 type EdgeColorMode = "frequency" | "time";
 type Algorithm = "heuristic" | "inductive";
-type SidePanel = "variants" | "performance" | "bottlenecks" | "conformance" | null;
+type SidePanel =
+  | "overview"
+  | "filters"
+  | "cases"
+  | "variants"
+  | "performance"
+  | "bottlenecks"
+  | "conformance"
+  | "simulation"
+  | null;
 
 function pathEdgeIds(sequence: string[]): Set<string> {
   const ids = new Set<string>();
@@ -153,8 +169,13 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
   const [selected, setSelected] = useState<ActivityCardData | null>(null);
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
   const [variant, setVariant] = useState<Variant | null>(null);
+  const [casePath, setCasePath] = useState<string[] | null>(null);
+  const [casePathKey, setCasePathKey] = useState<string | null>(null);
   const [bottlenecks, setBottlenecks] = useState<BottleneckReport | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [filters, setFilters] = useState<LogFilter>({});
+  const [replayOn, setReplayOn] = useState(false);
+  const [resourceNames, setResourceNames] = useState<string[]>([]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -166,25 +187,39 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
       const data =
         algorithm === "inductive"
           ? await discoverInductiveMiner(logId)
-          : await discoverHeuristicMiner(logId, params);
+          : await discoverHeuristicMiner(logId, { ...params, filters });
       setGraph(data);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [logId, params, algorithm]);
+  }, [logId, params, algorithm, filters]);
 
   useEffect(() => {
     runDiscovery();
   }, [runDiscovery]);
 
+  useEffect(() => {
+    // resource names for the filter suggestions (unfiltered top resources)
+    getOverview(logId, 5)
+      .then((r) => setResourceNames(r.top_resources.map((x) => x.name)))
+      .catch(() => {});
+  }, [logId]);
+
   const laidOut = useMemo(() => (graph ? layout(graph) : null), [graph]);
 
+  const highlightSeq = casePath ?? variant?.sequence ?? null;
   const highlight = useMemo(
-    () => (variant ? pathEdgeIds(variant.sequence) : null),
-    [variant],
+    () => (highlightSeq ? pathEdgeIds(highlightSeq) : null),
+    [highlightSeq],
   );
+
+  const showPath = useCallback((seq: string[] | null, key: string | null) => {
+    setCasePath(seq);
+    setCasePathKey(key);
+    if (seq) setVariant(null);
+  }, []);
 
   const bottleneckEdges = useMemo(() => {
     const s = new Set<string>();
@@ -316,6 +351,33 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
             </button>
           </div>
           <button
+            className={sidePanel === "overview" ? "" : "secondary"}
+            onClick={() => togglePanel("overview")}
+          >
+            Overview
+          </button>
+          <button
+            className={sidePanel === "filters" ? "" : "secondary"}
+            onClick={() => togglePanel("filters")}
+          >
+            Filters
+            {activeFilterCount(filters) > 0 && (
+              <span className="filter-badge">{activeFilterCount(filters)}</span>
+            )}
+          </button>
+          <button
+            className={sidePanel === "cases" ? "" : "secondary"}
+            onClick={() => togglePanel("cases")}
+          >
+            Cases
+          </button>
+          <button
+            className={replayOn ? "" : "secondary"}
+            onClick={() => setReplayOn((r) => !r)}
+          >
+            ▶ Replay
+          </button>
+          <button
             className={sidePanel === "variants" ? "" : "secondary"}
             onClick={() => togglePanel("variants")}
           >
@@ -338,6 +400,12 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
             onClick={() => togglePanel("conformance")}
           >
             Conformance
+          </button>
+          <button
+            className={sidePanel === "simulation" ? "" : "secondary"}
+            onClick={() => togglePanel("simulation")}
+          >
+            Simulation
           </button>
           <button className="secondary" onClick={exportBpmn} disabled={exporting}>
             {exporting ? "Exporting…" : "Export BPMN"}
@@ -368,12 +436,29 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
             <Controls />
             <MiniMap pannable zoomable />
+            {replayOn && (
+              <ReplayOverlay
+                logId={logId}
+                filters={filters}
+                nodes={nodes}
+                onClose={() => setReplayOn(false)}
+              />
+            )}
           </ReactFlow>
 
-          {variant && (
+          {variant && !casePath && (
             <div className="path-banner">
               Highlighting variant #{variant.rank} ({variant.percentage.toFixed(1)}%)
               <button className="link" onClick={() => setVariant(null)}>
+                clear
+              </button>
+            </div>
+          )}
+
+          {casePath && (
+            <div className="path-banner">
+              Highlighting case {casePathKey}
+              <button className="link" onClick={() => showPath(null, null)}>
                 clear
               </button>
             </div>
@@ -404,18 +489,37 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
         )}
         </div>
 
+        {sidePanel === "overview" && (
+          <OverviewPanel logId={logId} filters={filters} />
+        )}
+        {sidePanel === "filters" && (
+          <FilterPanel
+            logId={logId}
+            activities={graph?.nodes.map((n) => n.label) ?? []}
+            resources={resourceNames}
+            value={filters}
+            onApply={setFilters}
+          />
+        )}
+        {sidePanel === "cases" && (
+          <CasesPanel logId={logId} filters={filters} onShowPath={showPath} />
+        )}
         {sidePanel === "variants" && (
           <VariantsPanel
             logId={logId}
+            filters={filters}
             selectedRank={variant?.rank ?? null}
             onSelect={setVariant}
           />
         )}
-        {sidePanel === "performance" && <PerformancePanel logId={logId} />}
+        {sidePanel === "performance" && (
+          <PerformancePanel logId={logId} filters={filters} />
+        )}
         {sidePanel === "bottlenecks" && (
           <BottlenecksPanel
             logId={logId}
             logName={logName}
+            filters={filters}
             onChange={setBottlenecks}
           />
         )}
@@ -423,6 +527,13 @@ function ProcessGraphInner({ logId, logName, onClose }: Props) {
           <ConformancePanel
             logId={logId}
             onChange={() => {}}
+          />
+        )}
+        {sidePanel === "simulation" && (
+          <SimulationPanel
+            logId={logId}
+            filters={filters}
+            activities={graph?.nodes.map((n) => n.label) ?? []}
           />
         )}
       </div>

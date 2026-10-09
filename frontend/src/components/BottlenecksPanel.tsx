@@ -3,25 +3,32 @@ import {
   type BottleneckReport,
   detectBottlenecks,
   downloadBottlenecks,
+  type LogFilter,
 } from "../api";
 import { formatDuration } from "../format";
 
 interface Props {
   logId: string;
   logName: string;
+  filters?: LogFilter;
   onChange: (report: BottleneckReport | null) => void;
 }
 
 const PERCENTILES = [75, 90, 95];
 
-export default function BottlenecksPanel({ logId, logName, onChange }: Props) {
+export default function BottlenecksPanel({
+  logId,
+  logName,
+  filters,
+  onChange,
+}: Props) {
   const [report, setReport] = useState<BottleneckReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [percentile, setPercentile] = useState(90);
 
   useEffect(() => {
     let active = true;
-    detectBottlenecks(logId, { percentile, top_n: 5 })
+    detectBottlenecks(logId, { percentile, top_n: 5, filters })
       .then((r) => {
         if (active) {
           setReport(r);
@@ -32,7 +39,7 @@ export default function BottlenecksPanel({ logId, logName, onChange }: Props) {
     return () => {
       active = false;
     };
-  }, [logId, percentile, onChange]);
+  }, [logId, percentile, filters, onChange]);
 
   // Clear the graph highlight when the panel unmounts.
   useEffect(() => () => onChange(null), [onChange]);

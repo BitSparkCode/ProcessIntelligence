@@ -27,15 +27,17 @@ from app.services.process_data import Trace, load_traces
 def _throughput_seconds(trace: Trace) -> float:
     if len(trace) < 2:
         return 0.0
-    return max((trace[-1][1] - trace[0][1]).total_seconds(), 0.0)
+    return max(
+        (trace[-1].timestamp - trace[0].timestamp).total_seconds(), 0.0
+    )
 
 
 def _filter_window(traces: list[Trace], window_days: int | None) -> list[Trace]:
     if window_days is None or not traces:
         return traces
-    latest = max(t[-1][1] for t in traces if t)
+    latest = max(t[-1].timestamp for t in traces if t)
     cutoff = latest - timedelta(days=window_days)
-    return [t for t in traces if t and t[0][1] >= cutoff]
+    return [t for t in traces if t and t[0].timestamp >= cutoff]
 
 
 def _histogram(values: list[float], bins: int) -> list[HistogramBin]:
@@ -62,7 +64,7 @@ def _histogram(values: list[float], bins: int) -> list[HistogramBin]:
 def compute_performance(
     db: Session, log_id: str, params: PerformanceRequest
 ) -> PerformanceReport:
-    all_traces = list(load_traces(db, log_id).values())
+    all_traces = list(load_traces(db, log_id, params.filters).values())
     traces = _filter_window(all_traces, params.window_days)
 
     throughputs = [_throughput_seconds(t) for t in traces if t]
@@ -75,14 +77,14 @@ def compute_performance(
     tr_duration: dict[tuple[str, str], float] = defaultdict(float)
 
     for trace in traces:
-        for act, _ts in trace:
-            activity_freq[act] += 1
-        for (a_act, a_ts), (b_act, b_ts) in zip(trace, trace[1:], strict=False):
-            gap = max((b_ts - a_ts).total_seconds(), 0.0)
-            out_count[a_act] += 1
-            out_duration[a_act] += gap
-            tr_count[(a_act, b_act)] += 1
-            tr_duration[(a_act, b_act)] += gap
+        for ev in trace:
+            activity_freq[ev.activity] += 1
+        for a, b in zip(trace, trace[1:], strict=False):
+            gap = max((b.timestamp - a.timestamp).total_seconds(), 0.0)
+            out_count[a.activity] += 1
+            out_duration[a.activity] += gap
+            tr_count[(a.activity, b.activity)] += 1
+            tr_duration[(a.activity, b.activity)] += gap
 
     activity_stats = [
         ActivityStat(

@@ -2,6 +2,8 @@ import { useState } from "react";
 import {
   ColumnMapping,
   CsvPreview,
+  DataPrepAdvice,
+  getPrepAdvice,
   importCsv,
   MappingSuggestion,
   uploadCsv,
@@ -30,6 +32,7 @@ export default function CsvImport({ onImported }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<MappingSuggestion | null>(null);
+  const [advice, setAdvice] = useState<DataPrepAdvice | null>(null);
 
   async function handleFile(file: File) {
     setError(null);
@@ -51,6 +54,21 @@ export default function CsvImport({ onImported }: Props) {
         cost: m.cost ?? null,
         lifecycle: m.lifecycle ?? null,
       });
+      // Sprint 6: data-prep advice (case attribution + cleaning hints).
+      const adv = await getPrepAdvice(resp.upload_id).catch(() => null);
+      setAdvice(adv);
+      if (adv) {
+        const attr = adv.case_attribution;
+        if (
+          attr.kind === "composite" &&
+          attr.columns.every((c) => resp.preview.columns.includes(c))
+        ) {
+          setMapping((mm) => ({ ...mm, case_id_columns: attr.columns }));
+        }
+        if (adv.cleaning.some((s) => s.action === "normalize_activities")) {
+          setMapping((mm) => ({ ...mm, normalize_activities: true }));
+        }
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -72,6 +90,7 @@ export default function CsvImport({ onImported }: Props) {
       setUploadId(null);
       setPreview(null);
       setSuggestion(null);
+      setAdvice(null);
       onImported();
     } catch (e) {
       setError((e as Error).message);
@@ -80,8 +99,10 @@ export default function CsvImport({ onImported }: Props) {
     }
   }
 
+  const hasCaseKey =
+    !!mapping.case_id || (mapping.case_id_columns?.length ?? 0) >= 2;
   const canImport =
-    !!uploadId && !!mapping.case_id && !!mapping.activity && !!mapping.timestamp && !busy;
+    !!uploadId && hasCaseKey && !!mapping.activity && !!mapping.timestamp && !busy;
 
   return (
     <div>
@@ -108,6 +129,27 @@ export default function CsvImport({ onImported }: Props) {
               <div className="muted">{suggestion.reasoning}</div>
             </div>
           )}
+          {advice && (
+            <div className="suggestion-banner suggestion-banner--ai">
+              <strong>
+                {advice.ai_enabled ? "AI data prep" : "Data prep check"}
+              </strong>{" "}
+              <span className="muted">({advice.source})</span>
+              {advice.case_attribution.kind !== "none" && (
+                <div>
+                  Case key: {advice.case_attribution.columns.join(" + ")}{" "}
+                  ({advice.case_attribution.kind},{" "}
+                  {Math.round(advice.case_attribution.confidence * 100)}%)
+                </div>
+              )}
+              <div className="muted">{advice.case_attribution.reasoning}</div>
+              {advice.cleaning.map((s, i) => (
+                <div key={i} className={`prep-hint prep-hint--${s.severity}`}>
+                  {s.message}
+                </div>
+              ))}
+            </div>
+          )}
           <div className="mapping-grid">
             <label>Log name</label>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} />
@@ -118,6 +160,27 @@ export default function CsvImport({ onImported }: Props) {
               value={mapping.case_id}
               onChange={(v) => setMapping({ ...mapping, case_id: v })}
             />
+            <label>Case ID columns</label>
+            <select
+              multiple
+              size={Math.min(4, preview.columns.length)}
+              value={mapping.case_id_columns ?? []}
+              onChange={(e) =>
+                setMapping({
+                  ...mapping,
+                  case_id_columns: Array.from(
+                    e.target.selectedOptions,
+                    (o) => o.value,
+                  ),
+                })
+              }
+            >
+              {preview.columns.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
             <MappingSelect
               label="Activity *"
               columns={preview.columns}
@@ -140,6 +203,28 @@ export default function CsvImport({ onImported }: Props) {
                 onChange={(v) => setMapping({ ...mapping, [f.key]: v || null })}
               />
             ))}
+            <label>Cleaning</label>
+            <div className="prep-options">
+              <label className="prep-check">
+                <input
+                  type="checkbox"
+                  checked={mapping.normalize_activities ?? false}
+                  onChange={(e) =>
+                    setMapping({
+                      ...mapping,
+                      normalize_activities: e.target.checked,
+                    })
+                  }
+                />
+                Normalize activity spellings ("Create Order" = "create-order")
+              </label>
+              {(mapping.case_id_columns?.length ?? 0) >= 2 && (
+                <p className="muted">
+                  Case key = {mapping.case_id_columns!.join(" + ")} (overrides
+                  the single column above)
+                </p>
+              )}
+            </div>
           </div>
 
           <h3>Preview (first {preview.rows.length} rows)</h3>
