@@ -7,6 +7,7 @@ database or HTTP layer (see ``tests/test_csv_import.py``).
 from __future__ import annotations
 
 import csv
+import re
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,6 +17,22 @@ import pandas as pd
 from app.schemas.event_log import ColumnMapping, CsvPreview, ValidationError
 
 REQUIRED_FIELDS = ("case_id", "activity", "timestamp")
+
+_WS_RE = re.compile(r"\s+")
+
+
+def normalize_activity_name(name: str) -> str:
+    """Collapse whitespace and trim; used for activity-variant merging."""
+    return _WS_RE.sub(" ", name.strip())
+
+
+def _case_key_for(row: dict[str, str], mapping: ColumnMapping) -> str:
+    """Resolve the case key: composite columns joined with ' | ' or the plain
+    case_id column."""
+    if mapping.case_id_columns:
+        parts = [(row.get(c) or "").strip() for c in mapping.case_id_columns]
+        return " | ".join(parts) if any(parts) else ""
+    return (row.get(mapping.case_id) or "").strip()
 
 
 @dataclass
@@ -69,6 +86,9 @@ def validate_mapping(columns: Iterable[str], mapping: ColumnMapping) -> list[Val
         "cost": mapping.cost,
         "lifecycle": mapping.lifecycle,
     }
+    if mapping.case_id_columns:
+        for i, col in enumerate(mapping.case_id_columns):
+            mapped[f"case_id_columns[{i}]"] = col
     for field_name, source in mapped.items():
         if source is None:
             continue
@@ -131,20 +151,29 @@ def event_from_record(
     framework (Story 1.4) so every source funnels through the same mapping.
     """
     row = {k: ("" if v is None else str(v)) for k, v in record.items()}
-    case_key = (row.get(mapping.case_id) or "").strip()
+    case_key = _case_key_for(row, mapping)
     activity = (row.get(mapping.activity) or "").strip()
     if not case_key or not activity:
+        return None
+    lifecycle = _opt_field(row, mapping.lifecycle)
+    if (
+        mapping.lifecycle_keep
+        and lifecycle is not None
+        and lifecycle not in mapping.lifecycle_keep
+    ):
         return None
     ts = parse_timestamp(row.get(mapping.timestamp) or "", mapping.timestamp_format)
     if ts is None:
         return None
+    if mapping.normalize_activities:
+        activity = normalize_activity_name(activity)
     return NormalizedEvent(
         case_key=case_key,
         activity=activity,
         timestamp=ts,
         resource=_opt_field(row, mapping.resource),
         cost=parse_cost(row.get(mapping.cost)) if mapping.cost else None,
-        lifecycle=_opt_field(row, mapping.lifecycle),
+        lifecycle=lifecycle,
     )
 
 
@@ -159,8 +188,28 @@ def normalize_rows(
     Rows with empty case id or unparseable timestamp are skipped and reported.
     """
     report = NormalizationReport()
+    # First pass: when normalizing activities, count spellings so variants map
+    # onto the most frequent canonical form rather than the first seen.
+    canonical: dict[str, str] | None = None
+    if mapping.normalize_activities:
+        rows = list(rows)
+        counts: dict[str, dict[str, int]] = {}
+        for row in rows:
+            raw = (row.get(mapping.activity) or "").strip()
+            if not raw:
+                continue
+            norm = normalize_activity_name(raw).lower()
+            spellings = counts.setdefault(norm, {})
+            spellings[normalize_activity_name(raw)] = (
+                spellings.get(normalize_activity_name(raw), 0) + 1
+            )
+        canonical = {
+            norm: max(spellings.items(), key=lambda kv: kv[1])[0]
+            for norm, spellings in counts.items()
+        }
+
     for line_no, row in enumerate(rows, start=2):  # header is line 1
-        case_key = (row.get(mapping.case_id) or "").strip()
+        case_key = _case_key_for(row, mapping)
         activity = (row.get(mapping.activity) or "").strip()
         ts_raw = row.get(mapping.timestamp) or ""
 
@@ -188,6 +237,14 @@ def normalize_rows(
                 )
             continue
 
+        lifecycle = _opt_field(row, mapping.lifecycle)
+        if (
+            mapping.lifecycle_keep
+            and lifecycle is not None
+            and lifecycle not in mapping.lifecycle_keep
+        ):
+            continue
+
         ts = parse_timestamp(ts_raw, mapping.timestamp_format)
         if ts is None:
             report.skipped_rows += 1
@@ -201,6 +258,11 @@ def normalize_rows(
                 )
             continue
 
+        if canonical is not None:
+            activity = canonical.get(
+                normalize_activity_name(activity).lower(), activity
+            )
+
         report.events.append(
             NormalizedEvent(
                 case_key=case_key,
@@ -208,7 +270,7 @@ def normalize_rows(
                 timestamp=ts,
                 resource=_opt_field(row, mapping.resource),
                 cost=parse_cost(row.get(mapping.cost)) if mapping.cost else None,
-                lifecycle=_opt_field(row, mapping.lifecycle),
+                lifecycle=lifecycle,
             )
         )
     return report

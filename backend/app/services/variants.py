@@ -20,18 +20,20 @@ from app.services.process_data import Trace, load_traces
 def _throughput_seconds(trace: Trace) -> float:
     if len(trace) < 2:
         return 0.0
-    return max((trace[-1][1] - trace[0][1]).total_seconds(), 0.0)
+    return max(
+        (trace[-1].timestamp - trace[0].timestamp).total_seconds(), 0.0
+    )
 
 
 def analyze_variants(
     db: Session, log_id: str, params: VariantRequest
 ) -> VariantReport:
-    traces = load_traces(db, log_id)
+    traces = load_traces(db, log_id, params.filters)
     total_cases = len(traces)
 
     sequences: dict[tuple[str, ...], list[float]] = defaultdict(list)
     for trace in traces.values():
-        seq = tuple(act for act, _ts in trace)
+        seq = tuple(ev.activity for ev in trace)
         sequences[seq].append(_throughput_seconds(trace))
 
     ranked = sorted(

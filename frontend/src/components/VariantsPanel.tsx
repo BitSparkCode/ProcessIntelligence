@@ -1,14 +1,20 @@
 import { useEffect, useState } from "react";
-import { analyzeVariants, type Variant, type VariantReport } from "../api";
+import {
+  analyzeVariants,
+  type LogFilter,
+  type Variant,
+  type VariantReport,
+} from "../api";
 import { formatDuration } from "../format";
 
 interface Props {
   logId: string;
+  filters?: LogFilter;
   selectedRank: number | null;
   onSelect: (variant: Variant | null) => void;
 }
 
-export default function VariantsPanel({ logId, selectedRank, onSelect }: Props) {
+export default function VariantsPanel({ logId, filters, selectedRank, onSelect }: Props) {
   const [report, setReport] = useState<VariantReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [topN, setTopN] = useState(10);
@@ -16,7 +22,7 @@ export default function VariantsPanel({ logId, selectedRank, onSelect }: Props) 
 
   useEffect(() => {
     let active = true;
-    analyzeVariants(logId, { top_n: topN, min_frequency: minFreq })
+    analyzeVariants(logId, { top_n: topN, min_frequency: minFreq, filters })
       .then((r) => {
         if (active) setReport(r);
       })
@@ -24,7 +30,7 @@ export default function VariantsPanel({ logId, selectedRank, onSelect }: Props) 
     return () => {
       active = false;
     };
-  }, [logId, topN, minFreq]);
+  }, [logId, topN, minFreq, filters]);
 
   return (
     <div className="side-panel">

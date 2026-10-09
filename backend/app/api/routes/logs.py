@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import os
 import uuid
 
@@ -16,11 +17,13 @@ from app.models import EventLog, User
 from app.schemas.event_log import (
     ColumnMapping,
     CsvPreview,
+    DataPrepAdvice,
     EventLogOut,
     ImportResult,
     MappingSuggestion,
 )
 from app.services import ai, csv_import, log_storage, xes
+from app.services.ai.data_prep import PROFILE_SAMPLE_ROWS
 from app.services.xes import XesError
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
@@ -76,6 +79,26 @@ class ImportRequest(BaseModel):
     upload_id: str
     name: str
     mapping: ColumnMapping
+
+
+class PrepAdviceRequest(BaseModel):
+    upload_id: str
+
+
+@router.post("/prep-advice", response_model=DataPrepAdvice)
+def prep_advice(
+    req: PrepAdviceRequest,
+    current_user: User = Depends(get_current_user),
+) -> DataPrepAdvice:
+    """AI/heuristic data cleaning + case-attribution advice for an upload."""
+    path = _upload_path(req.upload_id)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Upload not found or expired")
+    columns = csv_import.sniff_columns(path)
+    rows = list(
+        itertools.islice(csv_import.iter_csv_rows(path), PROFILE_SAMPLE_ROWS)
+    )
+    return ai.suggest_prep(columns, rows)
 
 
 @router.post("/upload", response_model=UploadResponse)

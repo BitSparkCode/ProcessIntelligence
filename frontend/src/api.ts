@@ -30,12 +30,15 @@ export interface UploadResponse {
 
 export interface ColumnMapping {
   case_id: string;
+  case_id_columns?: string[] | null;
   activity: string;
   timestamp: string;
   resource?: string | null;
   cost?: string | null;
   lifecycle?: string | null;
   timestamp_format?: string | null;
+  normalize_activities?: boolean;
+  lifecycle_keep?: string[] | null;
 }
 
 export interface ImportResult {
@@ -88,6 +91,19 @@ export interface ProcessGraph {
 export interface DiscoveryParams {
   dependency_threshold: number;
   frequency_threshold: number;
+  filters?: LogFilter;
+}
+
+export interface LogFilter {
+  from_ts?: string | null;
+  to_ts?: string | null;
+  start_activities?: string[];
+  end_activities?: string[];
+  include_activities?: string[];
+  exclude_activities?: string[];
+  resources?: string[];
+  min_duration_seconds?: number | null;
+  max_duration_seconds?: number | null;
 }
 
 export interface Variant {
@@ -108,6 +124,7 @@ export interface VariantReport {
 export interface VariantParams {
   top_n?: number | null;
   min_frequency?: number;
+  filters?: LogFilter;
 }
 
 export interface ActivityStat {
@@ -146,6 +163,7 @@ export interface PerformanceReport {
 export interface PerformanceParams {
   window_days?: number | null;
   histogram_bins?: number;
+  filters?: LogFilter;
 }
 
 export interface Bottleneck {
@@ -175,6 +193,142 @@ export interface BottleneckParams {
   percentile?: number;
   top_n?: number;
   window_days?: number | null;
+  filters?: LogFilter;
+}
+
+export interface CaseSummary {
+  case_key: string;
+  start: string;
+  end: string;
+  duration_seconds: number;
+  event_count: number;
+  variant: string[];
+}
+
+export interface CaseListReport {
+  log_id: string;
+  total_cases: number;
+  page: number;
+  page_size: number;
+  cases: CaseSummary[];
+}
+
+export interface CaseEventOut {
+  activity: string;
+  timestamp: string;
+  resource: string | null;
+  gap_to_next_seconds: number | null;
+}
+
+export interface CaseDetailReport {
+  log_id: string;
+  case_key: string;
+  start: string;
+  end: string;
+  duration_seconds: number;
+  event_count: number;
+  events: CaseEventOut[];
+}
+
+export interface ReplayCase {
+  case_key: string;
+  events: [string, number][];
+}
+
+export interface ReplayReport {
+  log_id: string;
+  case_count: number;
+  horizon_seconds: number;
+  cases: ReplayCase[];
+}
+
+export interface TimeBucket {
+  start: string;
+  count: number;
+}
+
+export interface NamedCount {
+  name: string;
+  count: number;
+}
+
+export interface OverviewReport {
+  log_id: string;
+  event_count: number;
+  case_count: number;
+  activity_count: number;
+  first_event: string | null;
+  last_event: string | null;
+  mean_throughput_seconds: number;
+  median_throughput_seconds: number;
+  cases_over_time: TimeBucket[];
+  top_activities: NamedCount[];
+  top_resources: NamedCount[];
+}
+
+export interface DurationStats {
+  mean_seconds: number;
+  median_seconds: number;
+  p90_seconds: number;
+  min_seconds: number;
+  max_seconds: number;
+}
+
+export interface ActivitySimStat {
+  activity: string;
+  executions: number;
+  servers: number | null;
+  mean_service_seconds: number;
+  mean_wait_seconds: number;
+  max_wait_seconds: number;
+  utilization: number | null;
+  observed_mean_seconds: number | null;
+}
+
+export interface SimulationReport {
+  log_id: string;
+  simulated_cases: number;
+  horizon_seconds: number;
+  arrival_rate_per_day: number;
+  baseline: DurationStats | null;
+  simulated: DurationStats;
+  histogram: HistogramBin[];
+  activity_stats: ActivitySimStat[];
+}
+
+export interface SimulationParams {
+  cases?: number;
+  arrival_rate_per_day?: number | null;
+  arrival_rate_multiplier?: number;
+  default_servers?: number | null;
+  resource_pools?: Record<string, number>;
+  duration_multipliers?: Record<string, number>;
+  global_duration_multiplier?: number;
+  seed?: number;
+  histogram_bins?: number;
+  filters?: LogFilter;
+}
+
+export interface CaseAttribution {
+  kind: "single" | "composite" | "none";
+  columns: string[];
+  confidence: number;
+  reasoning: string;
+}
+
+export interface CleaningSuggestion {
+  severity: "info" | "warning" | "critical";
+  kind: string;
+  target: string;
+  message: string;
+  action: "normalize_activities" | "filter_lifecycle" | "drop_empty" | null;
+}
+
+export interface DataPrepAdvice {
+  case_attribution: CaseAttribution;
+  cleaning: CleaningSuggestion[];
+  source: "heuristic" | "ai";
+  ai_enabled: boolean;
 }
 
 export interface ConnectorInfo {
@@ -464,6 +618,89 @@ export async function downloadXes(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+export async function getPrepAdvice(uploadId: string): Promise<DataPrepAdvice> {
+  return handle<DataPrepAdvice>(
+    await fetch("/api/logs/prep-advice", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ upload_id: uploadId }),
+    }),
+  );
+}
+
+export async function listCases(
+  logId: string,
+  params: {
+    page?: number;
+    page_size?: number;
+    sort?: string;
+    descending?: boolean;
+    search?: string;
+    filters?: LogFilter;
+  } = {},
+): Promise<CaseListReport> {
+  return handle<CaseListReport>(
+    await fetch(`/api/analysis/${logId}/cases`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(params),
+    }),
+  );
+}
+
+export async function getCaseEvents(
+  logId: string,
+  caseKey: string,
+): Promise<CaseDetailReport> {
+  return handle<CaseDetailReport>(
+    await fetch(`/api/analysis/${logId}/case-events`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ case_key: caseKey }),
+    }),
+  );
+}
+
+export async function getReplay(
+  logId: string,
+  filters?: LogFilter,
+): Promise<ReplayReport> {
+  return handle<ReplayReport>(
+    await fetch(`/api/analysis/${logId}/replay`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ filters: filters ?? null }),
+    }),
+  );
+}
+
+export async function getOverview(
+  logId: string,
+  buckets = 30,
+  filters?: LogFilter,
+): Promise<OverviewReport> {
+  return handle<OverviewReport>(
+    await fetch(`/api/analysis/${logId}/overview`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ buckets, filters: filters ?? null }),
+    }),
+  );
+}
+
+export async function runSimulation(
+  logId: string,
+  params: SimulationParams = {},
+): Promise<SimulationReport> {
+  return handle<SimulationReport>(
+    await fetch(`/api/analysis/${logId}/simulate`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(params),
+    }),
+  );
 }
 
 export async function checkConformance(
